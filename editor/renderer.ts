@@ -57,6 +57,7 @@ export class Renderer {
   private depth: Depth = null
   private field: { tex: WebGLTexture; key: string } | null = null
   private glow: WebGLTexture | null = null
+  glowStrength = 0.4
   private format: { internal: number; type: number }
   width = 0
   height = 0
@@ -324,7 +325,7 @@ export class Renderer {
       const threshold = 0.05 + (p.bloomThreshold / 100) * 1.0
       const falloff = 0.35 + (p.bloomSize / 100) * 0.6
       const [first, ...rest] = c.bloomDown
-      this.use('prefilter', first).tex('uSrc', c.dev.tex).tex('uWide', c.wideDown[Math.min(2, c.wideDown.length - 1)].tex).f('uTexel', 1 / c.dev.w, 1 / c.dev.h).tex('uPaint', this.glow ?? src).f('uPainted', this.glow ? 1 : 0).f('uAmount', p.glow / 100).f('uThreshold', threshold).draw()
+      this.use('prefilter', first).tex('uSrc', c.dev.tex).tex('uWide', c.wideDown[Math.min(2, c.wideDown.length - 1)].tex).f('uTexel', 1 / c.dev.w, 1 / c.dev.h).tex('uPaint', this.glow ?? src).f('uPainted', this.glow ? this.glowStrength : 0).f('uAmount', p.glow / 100).f('uThreshold', threshold).draw()
       this.down(first, rest)
       bloom = this.up(c.bloomDown, c.bloomUp, falloff)
       bloomNorm = (1 - falloff ** c.bloomDown.length) / (1 - falloff)

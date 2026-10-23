@@ -2,11 +2,11 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: import.meta.dirname,
-  outputFileTracingExcludes: {
+  outputFileTracingIncludes: {
     '/api/focus': [
-      './node_modules/onnxruntime-node/bin/napi-v6/{darwin,win32}/**',
-      './node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**',
-      './node_modules/onnxruntime-web/**',
+      './node_modules/onnxruntime-node/{package.json,dist/**}',
+      './node_modules/onnxruntime-node/bin/napi-v6/linux/x64/**',
+      './node_modules/onnxruntime-common/**',
     ],
   },
   turbopack: {

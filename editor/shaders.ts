@@ -113,7 +113,7 @@ void main() {
   soft = soft * soft / (4.0 * knee + 1e-4);
   float weight = max(soft, bright - uThreshold) / max(bright, 1e-4);
   float paint = uPainted * texture(uPaint, vUv).a;
-  outColor = vec4(lin * weight * uAmount + paint * lin * (1.0 + 8.0 * peak), 1.0);
+  outColor = vec4(lin * weight * uAmount + paint * lin * (0.75 + 6.0 * peak), 1.0);
 }
 `
 

@@ -40,6 +40,7 @@ type EditorState = {
   comparing: boolean
   tool: Tool
   brush: number
+  glowStrength: number
   error: string | null
 }
 
@@ -58,6 +59,7 @@ export const useEditor = create<EditorState>(() => ({
   manual: NEUTRAL,
   focus: { x: 0.5, y: 0.5 },
   brush: 4,
+  glowStrength: 40,
 }))
 
 export function presetParams(state: Pick<EditorState, 'auto' | 'autoLook'>, id: string, strength: number) {

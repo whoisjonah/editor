@@ -48,12 +48,14 @@ export function Viewport({ onOpen, samples }: { onOpen: () => void; samples: Sam
     renderer.setImage(last.original!, last.edited ?? last.original!)
     renderer.setDepth(last.depth)
     renderer.setGlow(last.glow)
+    renderer.glowStrength = last.glowStrength / 100
     schedule()
     const stop = useEditor.subscribe((s) => {
       if (s.original && s.original !== last.original) renderer.setImage(s.original, s.edited ?? s.original)
       else if (s.edited && s.edited !== last.edited) renderer.setEdited(s.edited)
       if (s.depth !== last.depth) renderer.setDepth(s.depth)
       if (s.glow !== last.glow) renderer.setGlow(s.glow)
+      renderer.glowStrength = s.glowStrength / 100
       last = s
       schedule()
     })
@@ -83,7 +85,7 @@ export function Viewport({ onOpen, samples }: { onOpen: () => void; samples: Sam
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement) return
+      if (event.target instanceof HTMLInputElement && event.target.type !== 'range') return
       if (event.key === '\\') useEditor.setState({ comparing: true })
       if (!event.metaKey && !event.ctrlKey) return
       const key = event.key.toLowerCase()
@@ -176,6 +178,7 @@ function Status() {
 function Toolbar() {
   const tool = useEditor((s) => s.tool)
   const brush = useEditor((s) => s.brush)
+  const glowStrength = useEditor((s) => s.glowStrength)
   const canUndo = useEditor((s) => s.history.length > 0)
   const canRedo = useEditor((s) => s.future.length > 0)
   const comparing = useEditor((s) => s.comparing)
@@ -207,19 +210,8 @@ function Toolbar() {
           {label}
         </button>
       ))}
-      {tool && (
-        <input
-          type="range"
-          aria-label="Brush size"
-          className="range anim-pop mx-2 w-24"
-          min={1}
-          max={12}
-          step={0.5}
-          value={brush}
-          style={{ '--fill-to': `${((brush - 1) / 11) * 100}%` } as CSSProperties}
-          onChange={(event) => useEditor.setState({ brush: Number(event.target.value) })}
-        />
-      )}
+      {tool && <ToolRange label="Size" value={brush} min={1} max={12} step={0.5} onChange={(brush) => useEditor.setState({ brush })} />}
+      {tool === 'glow' && <ToolRange label="Strength" value={glowStrength} min={5} max={100} onChange={(glowStrength) => useEditor.setState({ glowStrength })} />}
       <button type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="btn-skeu-dark flex size-8 items-center justify-center rounded-lg disabled:opacity-40">
         <IconArrowBackUp size={15} />
       </button>
@@ -240,6 +232,24 @@ function trace(ctx: CanvasRenderingContext2D, points: Point[], size: number) {
   if (points.length > 1) return ctx.stroke()
   ctx.arc(points[0].x, points[0].y, size / 2, 0, Math.PI * 2)
   ctx.fill()
+}
+
+function ToolRange({ label, value, min, max, step = 1, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }) {
+  return (
+    <label className="anim-pop mx-2 flex items-center gap-2 text-xs text-app-dim">
+      {label}
+      <input
+        type="range"
+        className="range w-24"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        style={{ '--fill-to': `${((value - min) / (max - min)) * 100}%` } as CSSProperties}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </label>
+  )
 }
 
 function glowLayer(image: ImageData, points: Point[], size: number) {
