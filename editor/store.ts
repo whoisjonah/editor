@@ -23,6 +23,7 @@ type EditorState = {
   removals: Record<Removal, boolean>
   cleaning: boolean
   history: ImageData[]
+  future: ImageData[]
   filling: boolean
   mode: Mode
   preset: string
@@ -37,7 +38,7 @@ type EditorState = {
   error: string | null
 }
 
-const IDLE = { history: [], cleaning: false, filling: false, comparing: false, erasing: false, error: null }
+const IDLE = { history: [], future: [], cleaning: false, filling: false, comparing: false, erasing: false, error: null }
 
 const EMPTY = { id: null, source: null, name: '', original: null, edited: null, detection: null, ...IDLE }
 
@@ -152,7 +153,7 @@ async function clean(run: number) {
     image = await inpaint(image, mask)
     if (run !== token) return
   }
-  useEditor.setState({ edited: image, history: [], cleaning: false })
+  useEditor.setState({ edited: image, history: [], future: [], cleaning: false })
 }
 
 export async function setRemoval(removal: Removal, on: boolean) {
@@ -168,13 +169,19 @@ export async function eraseRegion(region: MaskRegion) {
   useEditor.setState({ filling: true })
   const filled = await inpaint(edited, region)
   if (run !== token) return useEditor.setState({ filling: false })
-  useEditor.setState({ edited: filled, history: [...history, edited].slice(-15), filling: false })
+  useEditor.setState({ edited: filled, history: [...history, edited].slice(-15), future: [], filling: false })
 }
 
 export function undoErase() {
-  const { history } = useEditor.getState()
-  if (!history.length) return
-  useEditor.setState({ edited: history[history.length - 1], history: history.slice(0, -1) })
+  const { edited, history, future } = useEditor.getState()
+  if (!edited || !history.length) return
+  useEditor.setState({ edited: history[history.length - 1], history: history.slice(0, -1), future: [...future, edited] })
+}
+
+export function redoErase() {
+  const { edited, history, future } = useEditor.getState()
+  if (!edited || !future.length) return
+  useEditor.setState({ edited: future[future.length - 1], history: [...history, edited].slice(-15), future: future.slice(0, -1) })
 }
 
 export function setMode(mode: Mode) {

@@ -1,13 +1,13 @@
 'use client'
 
-import { IconArrowBackUp, IconCameraSpark, IconEraser, IconEye, IconLoader2, IconPhotoUp } from '@tabler/icons-react'
+import { IconArrowBackUp, IconArrowForwardUp, IconCameraSpark, IconEraser, IconEye, IconLoader2, IconPhotoUp } from '@tabler/icons-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { Sample } from '@/data/samples'
 import { dilate } from '@/editor/mask'
 import { setActiveRenderer } from '@/editor/output'
 import { Renderer } from '@/editor/renderer'
 import { NEUTRAL } from '@/editor/params'
-import { currentParams, eraseRegion, openImage, undoErase, useEditor } from '@/editor/store'
+import { currentParams, eraseRegion, openImage, redoErase, undoErase, useEditor } from '@/editor/store'
 
 type Point = { x: number; y: number }
 
@@ -75,10 +75,11 @@ export function Viewport({ onOpen, samples }: { onOpen: () => void; samples: Sam
     const down = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement) return
       if (event.key === '\\') useEditor.setState({ comparing: true })
-      if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
-        event.preventDefault()
-        undoErase()
-      }
+      if (!event.metaKey && !event.ctrlKey) return
+      const key = event.key.toLowerCase()
+      if (key === 'z' || key === 'y') event.preventDefault()
+      if (key === 'z' && !event.shiftKey) undoErase()
+      if ((key === 'z' && event.shiftKey) || key === 'y') redoErase()
     }
     const up = (event: KeyboardEvent) => {
       if (event.key === '\\') useEditor.setState({ comparing: false })
@@ -166,6 +167,7 @@ function Toolbar() {
   const erasing = useEditor((s) => s.erasing)
   const brush = useEditor((s) => s.brush)
   const canUndo = useEditor((s) => s.history.length > 0)
+  const canRedo = useEditor((s) => s.future.length > 0)
   const comparing = useEditor((s) => s.comparing)
   const compare = (on: boolean) => useEditor.setState({ comparing: on })
 
@@ -207,6 +209,9 @@ function Toolbar() {
       )}
       <button type="button" onClick={undoErase} disabled={!canUndo} title="Undo erase (Ctrl+Z)" className="btn-skeu-dark flex size-8 items-center justify-center rounded-lg disabled:opacity-40">
         <IconArrowBackUp size={15} />
+      </button>
+      <button type="button" onClick={redoErase} disabled={!canRedo} title="Redo erase (Ctrl+Shift+Z)" className="btn-skeu-dark flex size-8 items-center justify-center rounded-lg disabled:opacity-40">
+        <IconArrowForwardUp size={15} />
       </button>
     </div>
   )
