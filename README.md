@@ -12,7 +12,7 @@ Licensed under the [GNU Affero General Public License v3.0](LICENSE). You can us
 ### Self-hosting
 
 - Node.js 20.9 or newer, and npm is required.
-- The site runs at `http://localhost:3000` by default.
-- I run the site on Vercel.
+- For local hosting, the site runs at `http://localhost:3000` by default.
+- For hosting the site publically, I use Vercel.
 - There is no database, env variables, and nothing like that. All editing happens within the browser!
 
