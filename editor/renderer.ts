@@ -322,7 +322,7 @@ export class Renderer {
     let bloom = c.dev
     let bloomNorm = 1
     if (p.glow > 0 || this.glow) {
-      const threshold = 0.05 + (p.bloomThreshold / 100) * 1.0
+      const threshold = 0.3 + (p.bloomThreshold / 100) * 0.9
       const falloff = 0.35 + (p.bloomSize / 100) * 0.6
       const [first, ...rest] = c.bloomDown
       this.use('prefilter', first).tex('uSrc', c.dev.tex).tex('uWide', c.wideDown[Math.min(2, c.wideDown.length - 1)].tex).f('uTexel', 1 / c.dev.w, 1 / c.dev.h).tex('uPaint', this.glow ?? src).f('uPainted', this.glow ? this.glowStrength : 0).f('uAmount', p.glow / 100).f('uThreshold', threshold).draw()

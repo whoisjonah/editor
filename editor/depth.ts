@@ -71,7 +71,7 @@ export async function estimateDepth(image: ImageData): Promise<Depth> {
 
 const area = ({ box }: Subject) => (box[2] - box[0]) * (box[3] - box[1])
 
-const weight = (s: Subject) => area(s) * s.score * (0.5 + s.depth) * (s.box[0] < 0.01 || s.box[2] > 0.99 ? 0.5 : 1)
+const weight = (s: Subject) => area(s) * s.score * (s.score < 0.5 ? 0.2 : 1) * (0.5 + s.depth) * (s.box[0] < 0.01 || s.box[2] > 0.99 ? 0.5 : 1)
 
 export function chooseTargets(subjects: Subject[], targets: Targets = 'auto') {
   if (Array.isArray(targets)) return targets.filter((i) => subjects[i])
@@ -82,6 +82,12 @@ export function chooseTargets(subjects: Subject[], targets: Targets = 'auto') {
   })
   if (targets !== 'auto') return picked
   return subjects.flatMap((s, i) => (picked.includes(i) || picked.some((j) => Math.abs(subjects[j].depth - s.depth) < 0.06) ? [i] : []))
+}
+
+export function standout(subjects: Subject[]) {
+  const total = subjects.reduce((sum, s) => sum + weight(s), 0)
+  const lead = subjects.reduce((a, s) => (weight(s) > weight(a) ? s : a))
+  return total ? (weight(lead) / total) * Math.min(1, Math.max(0, (area(lead) - 0.01) / 0.025)) : 0
 }
 
 export function focusField({ map, subjects }: Sight, focus: Focus, size: number) {
@@ -95,7 +101,7 @@ export function focusField({ map, subjects }: Sight, focus: Focus, size: number)
   let blur = new Float32Array(width * height).map((_, p) => {
     if (chosen.some((s) => s.mask[p])) return 0
     const d = data[p * 4] / 255
-    return Math.min(1, Math.max(0, (d > near ? (d - near) * 0.7 : far - d) - tolerance) / 0.7)
+    return Math.min(1, Math.max(0, (d > near ? (d - near) * 0.7 : (far - d) / Math.max(far, 0.1)) - tolerance) / 1)
   })
   for (const [dx, dy] of [[1, 0], [0, 1], [1, 0], [0, 1]]) {
     const next = new Float32Array(blur.length)

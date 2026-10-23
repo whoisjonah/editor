@@ -100,6 +100,7 @@ export const PRESET_GROUPS: PresetGroup[] = [
       },
       {
         id: 'sunset',
+        styled: true,
         name: 'Sunset',
         look: {
           exposure: -0.05,
@@ -163,8 +164,8 @@ export const PRESET_GROUPS: PresetGroup[] = [
           highlightHue: 35,
           highlightTint: 10,
           clarity: 14,
-          glow: 50,
-          bloomThreshold: 42,
+          glow: 32,
+          bloomThreshold: 50,
           bloomSize: 60,
           vignette: 38,
           blur: 18,

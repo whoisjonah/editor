@@ -1,8 +1,8 @@
-import { chooseTargets, subjectCenter, type Depth, type Sight } from './depth'
+import { standout, subjectCenter, type Depth, type Sight } from './depth'
 import { combine, type Focus, type Params } from './params'
 import { findSubject } from './subject'
 
-export type Scene = { median: number; lights: number; blown: number; close: number; focus: Focus; sight: Sight | null; presence: number }
+export type Scene = { median: number; lights: number; blown: number; close: number; focus: Focus; sight: Sight | null; hero: number }
 
 export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
@@ -66,14 +66,14 @@ export function readScene(image: ImageData, depth: Depth = null): Scene {
     close: closeness(image),
     focus: { x, y },
     sight,
-    presence: sight ? Math.max(0, ...chooseTargets(sight.subjects).map((i) => sight.subjects[i]).map(({ box }) => (box[2] - box[0]) * (box[3] - box[1]))) : 0,
+    hero: sight ? standout(sight.subjects) : 0,
   }
 }
 
-export function tailor(look: Partial<Params>, { median, lights, blown, close, sight, presence }: Scene): Partial<Params> {
+export function tailor(look: Partial<Params>, { median, lights, blown, close, sight, hero }: Scene): Partial<Params> {
   const tweaks: Partial<Params> = {}
   if (look.blur) {
-    tweaks.blur = look.blur * ((sight ? clamp(presence / 0.1, 0.15, 1) : 0.2 + 0.95 * close) * (median < 0.22 ? 1.1 : 1) - 1)
+    tweaks.blur = look.blur * ((sight ? 0.15 + 0.85 * clamp((hero - 0.3) / 0.4, 0, 1) : 0.2 + 0.95 * close) * (median < 0.22 ? 1.1 : 1) - 1)
     tweaks.focusSize = clamp((look.focusSize ?? 45) + (1 - close) * 12, 40, 66)
   }
   const night = median < 0.3
@@ -220,12 +220,12 @@ export function score(f: Features, base: Features, { median }: Scene) {
   const shade: [number, number] = [base.shade[0] * gain, base.shade[1] * gain]
   const moved = (a: [number, number], b: [number, number]) => Math.hypot(a[0] - b[0], a[1] - b[1])
   return {
-    exposure: band(f.mean, mix(0.2, 0.38, day), mix(0.3, 0.52, day), 0.05),
-    contrast: band(f.contrast, 0.23, 0.29, 0.025),
-    color: band(f.colorful, mix(0.25, 0.22, day), mix(0.33, 0.3, day), 0.035),
+    exposure: band(f.mean / base.mean, 0.85, 1.05 + 0.35 * day * clamp((0.38 - base.mean) / 0.2, 0, 1), 0.08),
+    contrast: band(f.contrast / base.contrast, 1.05, 1.3, 0.08) + band(f.contrast, 0, 0.29, 0.025),
+    color: band(f.colorful / base.colorful, 1, 1.25, 0.08) + band(f.colorful, 0, 0.34, 0.03),
     depth: band(f.floor, 0, mix(0.025, 0.06, day), 0.03),
     frame: band(f.frame / Math.max(base.frame, 0.2), 0.6, 0.82, 0.08),
-    warmth: band(f.tint[1], -0.01, 0.06, 0.025) + band(f.tint[0], -0.02, 0.06, 0.03),
+    warmth: (band(f.tint[1], -0.01, 0.06, 0.025) + band(f.tint[0], -0.02, 0.06, 0.03)) * day * 0.5,
     clipping: -Math.max(0, f.hi - Math.max(base.hi, 0.004)) * 60 - Math.max(0, f.lo - base.lo - 0.015) * 40,
     cool: -((Math.max(0, shade[1] - f.shade[1] - 0.01) / 0.025) ** 2),
     change: -(((f.mean - base.mean) / 0.14) ** 2) - (moved(f.tint, tint) / 0.14) ** 2 - (moved(f.shade, shade) / 0.14) ** 2,

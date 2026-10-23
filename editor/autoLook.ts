@@ -50,14 +50,14 @@ export function autoLook(image: ImageData, auto: Partial<Params>, scene: Scene):
       }
     }
   }
-  if (scene.presence > 0.04) best.look = { ...best.look, blur: Math.max(best.look.blur ?? 0, 40 * Math.min(1, scene.presence / 0.1)), blurMode: 'radial' }
+  if (scene.hero > 0.5) best.look = { ...best.look, blur: Math.max(best.look.blur ?? 0, 12 + 20 * scene.hero), blurMode: 'radial' }
   const day = clamp((scene.median - 0.15) / 0.3, 0, 1)
   for (let pass = 0; pass < 3; pass++) {
     const f = grab(blend(combine(auto, best.look), 1))
     const { vignette = 0, blacks = 0 } = { ...auto, ...best.look }
     best.look = combine(best.look, {
-      exposure: clamp(2.2 * Math.log2(clamp(base.mean * (0.85 + 0.07 * day), 0.2, 0.5) / f.mean) * 0.6, -0.25, 0.25),
-      contrast: clamp((0.235 + 0.015 * day - f.contrast) * 200, -8, 8),
+      exposure: clamp(2.2 * Math.log2(clamp(base.mean * (0.88 + 0.07 * day), 0.03, 0.5) / f.mean) * 0.6, -0.25, 0.25),
+      contrast: clamp((clamp(base.contrast * 1.15, 0.12, 0.26) - f.contrast) * 200, -8, 8),
       blacks: clamp((f.floor - 0.012 - 0.02 * day) * -250, -10 - blacks, Math.min(10, 15 - blacks)),
       vignette: clamp((f.frame / Math.max(base.frame, 0.2) - 0.74) * 120, -vignette, Math.min(12, 60 - vignette)),
       temperature: clamp((0.012 * day + Math.max(base.tint[1], -0.01) * (1 - day) - f.tint[1]) * 250, -6, 6),
