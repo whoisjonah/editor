@@ -20,6 +20,9 @@ export type Params = {
   dehaze: number
   sharpen: number
   glow: number
+  bloomThreshold: number
+  bloomSize: number
+  bloomWarmth: number
   vignette: number
   grain: number
   fringe: number
@@ -52,6 +55,9 @@ export const NEUTRAL: Params = {
   dehaze: 0,
   sharpen: 0,
   glow: 0,
+  bloomThreshold: 50,
+  bloomSize: 50,
+  bloomWarmth: 0,
   vignette: 0,
   grain: 0,
   fringe: 0,
@@ -60,7 +66,7 @@ export const NEUTRAL: Params = {
   blurMode: 'radial',
 }
 
-const FIXED: NumericKey[] = ['shadowHue', 'highlightHue', 'focusSize']
+const FIXED: NumericKey[] = ['shadowHue', 'highlightHue', 'focusSize', 'bloomThreshold', 'bloomSize']
 
 export function blend(look: Partial<Params>, strength: number): Params {
   const out = { ...NEUTRAL, ...look }

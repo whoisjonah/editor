@@ -45,6 +45,18 @@ export function tailor(look: Partial<Params>, { median, lights, blown, subject }
     tweaks.highlights = -15
     tweaks.glow = (tweaks.glow ?? 0) - 15
   }
+  if ((look.glow ?? 0) + (tweaks.glow ?? 0) > 0) {
+    let threshold = look.bloomThreshold ?? 50
+    let size = look.bloomSize ?? 50
+    if (median < 0.35 && lights > 0.01) {
+      threshold -= 12
+      size += 12
+    }
+    if (median > 0.45) threshold += 12
+    if (blown > 0.04) threshold += 15
+    tweaks.bloomThreshold = clamp(threshold, 10, 85)
+    tweaks.bloomSize = clamp(size, 20, 90)
+  }
   return combine(look, tweaks)
 }
 

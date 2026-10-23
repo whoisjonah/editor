@@ -58,10 +58,19 @@ export const SLIDER_GROUPS: SliderGroup[] = [
       { key: 'clarity', label: 'Clarity', min: -100, max: 100, format: signed },
       { key: 'dehaze', label: 'Dehaze', min: -100, max: 100, format: signed },
       { key: 'sharpen', label: 'Sharpen', min: 0, max: 100 },
-      { key: 'glow', label: 'Glow', min: 0, max: 100 },
       { key: 'vignette', label: 'Vignette', min: 0, max: 100 },
       { key: 'grain', label: 'Grain', min: 0, max: 100 },
       { key: 'fringe', label: 'Fringe', min: 0, max: 100 },
+    ],
+  },
+  {
+    id: 'bloom',
+    title: 'Bloom',
+    sliders: [
+      { key: 'glow', label: 'Amount', min: 0, max: 100 },
+      { key: 'bloomThreshold', label: 'Threshold', min: 0, max: 100 },
+      { key: 'bloomSize', label: 'Size', min: 0, max: 100 },
+      { key: 'bloomWarmth', label: 'Warmth', min: -100, max: 100, track: 'temperature', format: signed },
     ],
   },
   {

@@ -268,6 +268,25 @@ export const PRESET_GROUPS: PresetGroup[] = [
         },
       },
       {
+        id: 'bloom',
+        name: 'Bloom',
+        look: {
+          exposure: 0.05,
+          contrast: 10,
+          highlights: -20,
+          shadows: 10,
+          vibrance: 20,
+          clarity: -10,
+          glow: 70,
+          bloomThreshold: 25,
+          bloomSize: 80,
+          bloomWarmth: 25,
+          highlightHue: 35,
+          highlightTint: 15,
+          vignette: 25,
+        },
+      },
+      {
         id: 'faded',
         name: 'Faded',
         look: {

@@ -20,8 +20,6 @@ type Chains = {
 
 export const MAX_SIZE = 6144
 
-const BLOOM_FALLOFF = 0.65
-const BLOOM_THRESHOLD = 0.55
 const BLOOM_STRENGTH = 2.2
 const LENS_RADIUS = 0.035
 
@@ -294,12 +292,15 @@ export class Renderer {
     let bloom = c.dev
     let bloomNorm = 1
     if (p.glow > 0) {
+      const threshold = 0.05 + (p.bloomThreshold / 100) * 1.0
+      const falloff = 0.35 + (p.bloomSize / 100) * 0.6
       const [first, ...rest] = c.bloomDown
-      this.use('prefilter', first).tex('uSrc', c.dev.tex).f('uTexel', 1 / c.dev.w, 1 / c.dev.h).f('uThreshold', BLOOM_THRESHOLD).draw()
+      this.use('prefilter', first).tex('uSrc', c.dev.tex).f('uTexel', 1 / c.dev.w, 1 / c.dev.h).f('uThreshold', threshold).draw()
       this.down(first, rest)
-      bloom = this.up(c.bloomDown, c.bloomUp, BLOOM_FALLOFF)
-      bloomNorm = (1 - BLOOM_FALLOFF ** c.bloomDown.length) / (1 - BLOOM_FALLOFF)
+      bloom = this.up(c.bloomDown, c.bloomUp, falloff)
+      bloomNorm = (1 - falloff ** c.bloomDown.length) / (1 - falloff)
     }
+    const bloomTint = balance(p.bloomWarmth * 1.5, 0)
 
     this.use('final', null)
       .tex('uDev', c.dev.tex)
@@ -312,6 +313,7 @@ export class Renderer {
       .f('uTilt', p.blurMode === 'tilt' ? 1 : 0)
       .f('uFocus', focus.x, focus.y)
       .f('uGlow', ((p.glow / 100) * BLOOM_STRENGTH) / bloomNorm)
+      .f('uBloomTint', ...bloomTint)
       .f('uVignette', p.vignette / 100)
       .f('uGrain', p.grain / 100)
       .f('uGrainSize', Math.max(1, (this.height / 1080) * 1.4))

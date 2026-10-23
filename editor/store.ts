@@ -128,6 +128,7 @@ export async function restoreRecent(id: string) {
       ...IDLE,
       ...analyze(original),
       ...recent.settings,
+      manual: { ...NEUTRAL, ...recent.settings.manual },
       id: recent.id,
       source: recent.original,
       name: recent.name,

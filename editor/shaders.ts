@@ -223,6 +223,7 @@ uniform float uFocusSize;
 uniform float uTilt;
 uniform vec2 uFocus;
 uniform float uGlow;
+uniform vec3 uBloomTint;
 uniform float uVignette;
 uniform float uGrain;
 uniform float uGrainSize;
@@ -252,7 +253,7 @@ void main() {
 
   if (uGlow > 0.0) {
     vec3 lin = pow(clamp(c, 0.0, 1.0), vec3(2.2));
-    lin += texture(uBloom, st).rgb * uGlow;
+    lin += texture(uBloom, st).rgb * uBloomTint * uGlow;
     c = pow(shoulder(lin, 4.0), vec3(1.0 / 2.2));
   }
 
