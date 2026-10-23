@@ -1,15 +1,21 @@
 'use client'
 
-import { IconArrowBackUp, IconArrowForwardUp, IconCameraSpark, IconEraser, IconEye, IconLoader2, IconPhotoUp } from '@tabler/icons-react'
+import { IconArrowBackUp, IconArrowForwardUp, IconCameraSpark, IconEraser, IconEye, IconLoader2, IconPhotoUp, IconSun } from '@tabler/icons-react'
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { Sample } from '@/data/samples'
+import { chooseTargets } from '@/editor/depth'
 import { dilate } from '@/editor/mask'
 import { setActiveRenderer } from '@/editor/output'
 import { Renderer } from '@/editor/renderer'
 import { NEUTRAL } from '@/editor/params'
-import { currentParams, eraseRegion, openImage, redoErase, undoErase, useEditor } from '@/editor/store'
+import { currentParams, eraseRegion, openImage, paintGlow, redo, toggleTarget, undo, useEditor, type Tool } from '@/editor/store'
 
 type Point = { x: number; y: number }
+
+const TOOLS: { id: Exclude<Tool, null>; label: string; icon: typeof IconEraser; title: string }[] = [
+  { id: 'erase', label: 'Erase', icon: IconEraser, title: 'Paint over anything you want gone' },
+  { id: 'glow', label: 'Glow', icon: IconSun, title: 'Paint where light should bloom' },
+]
 
 export function Viewport({ onOpen, samples }: { onOpen: () => void; samples: Sample[] }) {
   const original = useEditor((s) => s.original)
@@ -40,10 +46,14 @@ export function Viewport({ onOpen, samples }: { onOpen: () => void; samples: Sam
       if (!frame) frame = requestAnimationFrame(draw)
     }
     renderer.setImage(last.original!, last.edited ?? last.original!)
+    renderer.setDepth(last.depth)
+    renderer.setGlow(last.glow)
     schedule()
     const stop = useEditor.subscribe((s) => {
       if (s.original && s.original !== last.original) renderer.setImage(s.original, s.edited ?? s.original)
       else if (s.edited && s.edited !== last.edited) renderer.setEdited(s.edited)
+      if (s.depth !== last.depth) renderer.setDepth(s.depth)
+      if (s.glow !== last.glow) renderer.setGlow(s.glow)
       last = s
       schedule()
     })
@@ -78,8 +88,8 @@ export function Viewport({ onOpen, samples }: { onOpen: () => void; samples: Sam
       if (!event.metaKey && !event.ctrlKey) return
       const key = event.key.toLowerCase()
       if (key === 'z' || key === 'y') event.preventDefault()
-      if (key === 'z' && !event.shiftKey) undoErase()
-      if ((key === 'z' && event.shiftKey) || key === 'y') redoErase()
+      if (key === 'z' && !event.shiftKey) undo()
+      if ((key === 'z' && event.shiftKey) || key === 'y') redo()
     }
     const up = (event: KeyboardEvent) => {
       if (event.key === '\\') useEditor.setState({ comparing: false })
@@ -164,7 +174,7 @@ function Status() {
 }
 
 function Toolbar() {
-  const erasing = useEditor((s) => s.erasing)
+  const tool = useEditor((s) => s.tool)
   const brush = useEditor((s) => s.brush)
   const canUndo = useEditor((s) => s.history.length > 0)
   const canRedo = useEditor((s) => s.future.length > 0)
@@ -184,17 +194,20 @@ function Toolbar() {
         <IconEye size={15} />
         Original
       </button>
-      <button
-        type="button"
-        aria-pressed={erasing}
-        onClick={() => useEditor.setState({ erasing: !erasing })}
-        title="Paint over anything you want gone"
-        className={`flex h-8 items-center gap-2 rounded-lg px-3 text-sm ${erasing ? 'btn-skeu font-medium' : 'btn-skeu-dark'}`}
-      >
-        <IconEraser size={15} />
-        Erase
-      </button>
-      {erasing && (
+      {TOOLS.map(({ id, label, icon: Icon, title }) => (
+        <button
+          key={id}
+          type="button"
+          aria-pressed={tool === id}
+          onClick={() => useEditor.setState({ tool: tool === id ? null : id })}
+          title={title}
+          className={`flex h-8 items-center gap-2 rounded-lg px-3 text-sm ${tool === id ? 'btn-skeu font-medium' : 'btn-skeu-dark'}`}
+        >
+          <Icon size={15} />
+          {label}
+        </button>
+      ))}
+      {tool && (
         <input
           type="range"
           aria-label="Brush size"
@@ -207,10 +220,10 @@ function Toolbar() {
           onChange={(event) => useEditor.setState({ brush: Number(event.target.value) })}
         />
       )}
-      <button type="button" onClick={undoErase} disabled={!canUndo} title="Undo erase (Ctrl+Z)" className="btn-skeu-dark flex size-8 items-center justify-center rounded-lg disabled:opacity-40">
+      <button type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="btn-skeu-dark flex size-8 items-center justify-center rounded-lg disabled:opacity-40">
         <IconArrowBackUp size={15} />
       </button>
-      <button type="button" onClick={redoErase} disabled={!canRedo} title="Redo erase (Ctrl+Shift+Z)" className="btn-skeu-dark flex size-8 items-center justify-center rounded-lg disabled:opacity-40">
+      <button type="button" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" className="btn-skeu-dark flex size-8 items-center justify-center rounded-lg disabled:opacity-40">
         <IconArrowForwardUp size={15} />
       </button>
     </div>
@@ -229,19 +242,36 @@ function trace(ctx: CanvasRenderingContext2D, points: Point[], size: number) {
   ctx.fill()
 }
 
+function glowLayer(image: ImageData, points: Point[], size: number) {
+  const { glow } = useEditor.getState()
+  const c = document.createElement('canvas')
+  c.width = Math.round(image.width / 2)
+  c.height = Math.round(image.height / 2)
+  const ctx = c.getContext('2d', { willReadFrequently: true })!
+  if (glow) ctx.putImageData(glow, 0, 0)
+  ctx.scale(0.5, 0.5)
+  ctx.filter = `blur(${size * 0.3}px)`
+  ctx.strokeStyle = ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
+  trace(ctx, points, size)
+  return ctx.getImageData(0, 0, c.width, c.height)
+}
+
 function Overlay({ width, height }: { width: number; height: number }) {
-  const erasing = useEditor((s) => s.erasing)
+  const tool = useEditor((s) => s.tool)
   const brush = useEditor((s) => s.brush)
   const focus = useEditor((s) => s.focus)
   const blur = useEditor((s) => currentParams(s).blur)
   const tilt = useEditor((s) => currentParams(s).blurMode === 'tilt')
   const image = useEditor((s) => s.original)
+  const depth = useEditor((s) => s.depth)
   const paint = useRef<HTMLCanvasElement>(null)
   const stroke = useRef<Point[] | null>(null)
   const [cursor, setCursor] = useState<Point | null>(null)
   const [dragging, setDragging] = useState(false)
 
   if (!image) return null
+  const subjects = depth && depth !== 'loading' && !tilt ? depth.subjects : []
+  const chosen = chooseTargets(subjects, focus.targets)
   const scale = width / image.width
   const brushPx = (brush / 100) * image.height
 
@@ -259,7 +289,7 @@ function Overlay({ width, height }: { width: number; height: number }) {
     c.height = Math.round(height * dpr)
     const ctx = c.getContext('2d')!
     ctx.scale(dpr * scale, dpr * scale)
-    ctx.strokeStyle = ctx.fillStyle = 'rgba(255, 77, 79, 0.55)'
+    ctx.strokeStyle = ctx.fillStyle = tool === 'glow' ? 'rgba(255, 214, 120, 0.45)' : 'rgba(255, 77, 79, 0.55)'
     trace(ctx, points, brushPx)
   }
 
@@ -268,6 +298,7 @@ function Overlay({ width, height }: { width: number; height: number }) {
     stroke.current = null
     if (paint.current) paint.current.width = paint.current.width
     if (!points?.length) return
+    if (tool === 'glow') return paintGlow(glowLayer(image, points, brushPx))
     const r = brushPx / 2
     const x0 = Math.max(0, Math.floor(Math.min(...points.map((p) => p.x)) - r))
     const y0 = Math.max(0, Math.floor(Math.min(...points.map((p) => p.y)) - r))
@@ -289,7 +320,7 @@ function Overlay({ width, height }: { width: number; height: number }) {
   }
 
   const onDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!erasing) return
+    if (!tool) return
     event.currentTarget.setPointerCapture(event.pointerId)
     stroke.current = [toImage(event)]
     drawStroke()
@@ -297,7 +328,7 @@ function Overlay({ width, height }: { width: number; height: number }) {
 
   const onMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const p = toImage(event)
-    if (erasing) setCursor(p)
+    if (tool) setCursor(p)
     if (dragging) {
       useEditor.setState({ focus: { x: Math.min(1, Math.max(0, p.x / image.width)), y: Math.min(1, Math.max(0, p.y / image.height)) } })
       return
@@ -315,7 +346,7 @@ function Overlay({ width, height }: { width: number; height: number }) {
 
   return (
     <div
-      className={`group absolute inset-0 touch-none ${erasing ? 'cursor-none' : ''}`}
+      className={`group absolute inset-0 touch-none ${tool ? 'cursor-none' : ''}`}
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
@@ -323,13 +354,28 @@ function Overlay({ width, height }: { width: number; height: number }) {
       onPointerLeave={() => setCursor(null)}
     >
       <canvas ref={paint} className="pointer-events-none absolute inset-0 h-full w-full" />
-      {erasing && cursor && (
+      {tool && cursor && (
         <div
           className="pointer-events-none absolute rounded-full border border-white/90 shadow-[0_0_0_1px_rgba(0,0,0,0.6)]"
           style={{ left: cursor.x * scale - (brushPx * scale) / 2, top: cursor.y * scale - (brushPx * scale) / 2, width: brushPx * scale, height: brushPx * scale }}
         />
       )}
-      {!erasing && blur > 0 && (
+      {!tool &&
+        blur > 0 &&
+        subjects.map(({ box, kind }, i) => (
+          <button
+            key={i}
+            type="button"
+            aria-label={`${chosen.includes(i) ? 'Blur' : 'Focus on'} this ${kind === 'vehicle' ? 'vehicle' : 'person'}`}
+            aria-pressed={chosen.includes(i)}
+            onClick={() => toggleTarget(i)}
+            className={`absolute rounded-md border transition-opacity ${
+              chosen.includes(i) ? 'border-white/80 opacity-0 group-hover:opacity-100' : 'border-dashed border-white/40 opacity-0 group-hover:opacity-100 hover:border-white/80'
+            }`}
+            style={{ left: box[0] * width, top: box[1] * height, width: (box[2] - box[0]) * width, height: (box[3] - box[1]) * height }}
+          />
+        ))}
+      {!tool && blur > 0 && !chosen.length && (
         <button
           type="button"
           aria-label="Focus point"

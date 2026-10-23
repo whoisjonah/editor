@@ -1,3 +1,4 @@
+import { focusField, type Depth, type Sight } from './depth'
 import type { Focus, Params } from './params'
 import { BASE, DOWN, FINAL, LENS, PREFILTER, TONE, UP, VERTEX } from './shaders'
 
@@ -21,7 +22,7 @@ type Chains = {
 export const MAX_SIZE = 6144
 
 const BLOOM_STRENGTH = 2.2
-const LENS_RADIUS = 0.035
+const LENS_RADIUS = 0.05
 
 function hueColor(hue: number): [number, number, number] {
   const h = (((hue % 360) + 360) % 360) / 60
@@ -53,6 +54,9 @@ export class Renderer {
   private programs: Record<ProgramName, Program>
   private sources: { edited: WebGLTexture | null; original: WebGLTexture | null } = { edited: null, original: null }
   private chains: Chains | null = null
+  private depth: Depth = null
+  private field: { tex: WebGLTexture; key: string } | null = null
+  private glow: WebGLTexture | null = null
   private format: { internal: number; type: number }
   width = 0
   height = 0
@@ -181,6 +185,27 @@ export class Renderer {
     this.sources.edited = this.texture(this.width, this.height, edited)
   }
 
+  setGlow(glow: ImageData | null) {
+    if (this.glow) this.gl.deleteTexture(this.glow)
+    this.glow = glow && this.texture(glow.width, glow.height, glow)
+  }
+
+  setDepth(depth: Depth) {
+    this.depth = depth
+    if (this.field) this.gl.deleteTexture(this.field.tex)
+    this.field = null
+  }
+
+  private focusMap(sight: Sight, focus: Focus, size: number) {
+    const key = JSON.stringify([focus, size])
+    if (this.field?.key !== key) {
+      if (this.field) this.gl.deleteTexture(this.field.tex)
+      const field = focusField(sight, focus, size)
+      this.field = { tex: this.texture(field.width, field.height, field), key }
+    }
+    return this.field.tex
+  }
+
   private use(name: ProgramName, target: Target | null) {
     const gl = this.gl
     const p = this.programs[name]
@@ -276,26 +301,30 @@ export class Renderer {
       .f('uWhite', Math.max(1, peak))
       .draw()
 
-    const radius = (p.blur / 100) * LENS_RADIUS * c.half.h
-    if (p.blur > 0) {
+    const tilt = p.blurMode === 'tilt'
+    const field = this.depth && this.depth !== 'loading' && !tilt ? this.focusMap(this.depth, focus, p.focusSize / 100) : null
+    const radius = this.depth === 'loading' && !tilt ? 0 : (p.blur / 100) * LENS_RADIUS * c.half.h
+    if (radius > 0) {
       this.use('down', c.half).tex('uSrc', c.dev.tex).f('uTexel', 1 / c.dev.w, 1 / c.dev.h).draw()
       this.use('lens', c.lens)
         .tex('uSrc', c.half.tex)
         .f('uTexel', 1 / c.half.w, 1 / c.half.h)
         .f('uRadius', radius)
         .f('uFocusSize', p.focusSize / 100)
-        .f('uTilt', p.blurMode === 'tilt' ? 1 : 0)
+        .f('uTilt', tilt ? 1 : 0)
         .f('uFocus', focus.x, focus.y)
+        .tex('uField', field ?? src)
+        .f('uFieldOn', field ? 1 : 0)
         .draw()
     }
 
     let bloom = c.dev
     let bloomNorm = 1
-    if (p.glow > 0) {
+    if (p.glow > 0 || this.glow) {
       const threshold = 0.05 + (p.bloomThreshold / 100) * 1.0
       const falloff = 0.35 + (p.bloomSize / 100) * 0.6
       const [first, ...rest] = c.bloomDown
-      this.use('prefilter', first).tex('uSrc', c.dev.tex).f('uTexel', 1 / c.dev.w, 1 / c.dev.h).f('uThreshold', threshold).draw()
+      this.use('prefilter', first).tex('uSrc', c.dev.tex).tex('uWide', c.wideDown[Math.min(2, c.wideDown.length - 1)].tex).f('uTexel', 1 / c.dev.w, 1 / c.dev.h).tex('uPaint', this.glow ?? src).f('uPainted', this.glow ? 1 : 0).f('uAmount', p.glow / 100).f('uThreshold', threshold).draw()
       this.down(first, rest)
       bloom = this.up(c.bloomDown, c.bloomUp, falloff)
       bloomNorm = (1 - falloff ** c.bloomDown.length) / (1 - falloff)
@@ -310,9 +339,11 @@ export class Renderer {
       .f('uSharpen', p.sharpen / 100)
       .f('uRadius', radius)
       .f('uFocusSize', p.focusSize / 100)
-      .f('uTilt', p.blurMode === 'tilt' ? 1 : 0)
+      .f('uTilt', tilt ? 1 : 0)
       .f('uFocus', focus.x, focus.y)
-      .f('uGlow', ((p.glow / 100) * BLOOM_STRENGTH) / bloomNorm)
+      .tex('uField', field ?? src)
+      .f('uFieldOn', field ? 1 : 0)
+      .f('uGlow', p.glow > 0 || this.glow ? BLOOM_STRENGTH / bloomNorm : 0)
       .f('uBloomTint', ...bloomTint)
       .f('uVignette', p.vignette / 100)
       .f('uGrain', p.grain / 100)
@@ -321,6 +352,8 @@ export class Renderer {
   }
 
   dispose() {
+    this.setDepth(null)
+    this.setGlow(null)
     this.release()
     this.gl.getExtension('WEBGL_lose_context')?.loseContext()
   }

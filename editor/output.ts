@@ -35,6 +35,8 @@ export function renderThumbnails(): Record<string, string> {
     return {}
   }
   thumbs.setImage(pixels(scaled(canvasOf(state.edited), 360)))
+  thumbs.setDepth(state.depth)
+  thumbs.setGlow(state.glow)
   const out: Record<string, string> = {}
   for (const id of ['auto', ...PRESETS.map((p) => p.id)]) {
     thumbs.render(presetParams(state, id, 100), state.focus)

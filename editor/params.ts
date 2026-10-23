@@ -33,7 +33,9 @@ export type Params = {
 
 export type NumericKey = Exclude<keyof Params, 'blurMode'>
 
-export type Focus = { x: number; y: number }
+export type Targets = 'auto' | 'vehicles' | 'people' | 'all' | number[]
+
+export type Focus = { x: number; y: number; targets?: Targets }
 
 export const NEUTRAL: Params = {
   exposure: 0,

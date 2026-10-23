@@ -23,7 +23,11 @@ vec3 shoulder(vec3 x, float white) {
 }
 `
 
-const FOCUS = `float focusMask(vec2 st) {
+const FOCUS = `uniform sampler2D uField;
+uniform float uFieldOn;
+
+float focusMask(vec2 st) {
+  if (uFieldOn > 0.5) return texture(uField, st).r;
   if (uTilt > 0.5) {
     float r = mix(0.03, 0.42, uFocusSize);
     return smoothstep(r, r + 0.3, abs(st.y - uFocus.y));
@@ -92,18 +96,24 @@ void main() {
 
 export const PREFILTER = `${HEAD}
 uniform sampler2D uSrc;
+uniform sampler2D uWide;
+uniform sampler2D uPaint;
+uniform float uPainted;
+uniform float uAmount;
 uniform vec2 uTexel;
 uniform float uThreshold;
 void main() {
   vec2 h = uTexel * 0.5;
   vec3 c = (texture(uSrc, vUv - h).rgb + texture(uSrc, vUv + h).rgb + texture(uSrc, vUv + vec2(h.x, -h.y)).rgb + texture(uSrc, vUv - vec2(h.x, -h.y)).rgb) * 0.25;
   vec3 lin = pow(c, vec3(2.2));
-  float bright = max(lin.r, max(lin.g, lin.b));
+  float peak = max(lin.r, max(lin.g, lin.b));
+  float bright = peak * smoothstep(0.03, 0.2, luma(c) - luma(texture(uWide, vUv).rgb));
   float knee = uThreshold * 0.5;
   float soft = clamp(bright - uThreshold + knee, 0.0, 2.0 * knee);
   soft = soft * soft / (4.0 * knee + 1e-4);
   float weight = max(soft, bright - uThreshold) / max(bright, 1e-4);
-  outColor = vec4(lin * weight, 1.0);
+  float paint = uPainted * texture(uPaint, vUv).a;
+  outColor = vec4(lin * weight * uAmount + paint * lin * (1.0 + 8.0 * peak), 1.0);
 }
 `
 
@@ -129,13 +139,14 @@ void main() {
     float t = (float(i) + 0.5) / 80.0;
     float r = sqrt(t) * coc;
     float a = float(i) * 2.39996323;
-    vec3 s = texture(uSrc, vUv + vec2(cos(a), sin(a)) * r * uTexel).rgb;
+    vec2 at = vUv + vec2(cos(a), sin(a)) * r * uTexel;
+    vec3 s = texture(uSrc, at).rgb;
     float l = luma(s);
-    float w = 1.0 + 12.0 * pow(l, 6.0);
+    float w = (1.0 + 12.0 * pow(l, 6.0)) * smoothstep(r - 1.0, r + 0.5, focusMask(at) * uRadius);
     sum += s * w;
     total += w;
   }
-  outColor = vec4(sum / total, 1.0);
+  outColor = vec4(sum / max(total, 1e-4), 1.0);
 }
 `
 
@@ -168,8 +179,10 @@ void main() {
   float baseLuma = luma(c);
   float wideLuma = luma(wide);
 
-  c += (c - wide) * uDehaze * 0.45;
-  c = (c - vec3(0.06 * uDehaze)) / (1.0 - 0.06 * uDehaze);
+  c += (baseLuma - wideLuma) * uDehaze * 0.45;
+  float haze = 0.06 * uDehaze;
+  float hazy = max(luma(c), 1e-4);
+  c = mix(c * max(hazy - haze, 0.0) / hazy, c - haze, 0.35) / (1.0 - haze);
 
   float local = mix(max(luma(c), 0.0), wideLuma, 0.65);
   float shadowMask = 1.0 - smoothstep(0.0, 0.6, local);
@@ -180,7 +193,11 @@ void main() {
 
   float black = -0.16 * uBlacks;
   float white = 1.0 - 0.2 * uWhites;
-  c = (c - black) / max(white - black, 1e-3);
+  float range = max(white - black, 1e-3);
+  float before = max(luma(c), 1e-4);
+  float after = max((before - black) / range, 0.0);
+  vec3 leveled = after < before ? c * (after / before) : c + (after - before);
+  c = mix(leveled, (c - black) / range, 0.25);
   c = clamp(shoulder(max(c, 0.0), uWhite), 0.0, 1.0);
 
   c = curve(c, exp(uContrast * 0.95));
@@ -194,8 +211,9 @@ void main() {
   float chroma = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
   float vibrance = uVibrance * (1.0 - clamp(chroma, 0.0, 1.0));
   float boost = uSaturation + uDehaze * 0.2 + vibrance;
-  float sky = clamp((c.b - c.r) * 3.0, 0.0, 1.0) * smoothstep(0.35, 0.7, l);
-  if (boost > 0.0) boost *= 1.0 - 0.6 * sky;
+  float cool = clamp((c.b - c.r) * 3.0, 0.0, 1.0);
+  float sky = cool * smoothstep(0.35, 0.7, l);
+  if (boost > 0.0) boost *= 1.0 - max(0.6 * sky, 0.45 * cool);
   c = mix(vec3(l), c, 1.0 + boost);
   c = max(c, 0.0);
 
@@ -254,7 +272,8 @@ void main() {
   if (uGlow > 0.0) {
     vec3 lin = pow(clamp(c, 0.0, 1.0), vec3(2.2));
     lin += texture(uBloom, st).rgb * uBloomTint * uGlow;
-    c = pow(shoulder(lin, 4.0), vec3(1.0 / 2.2));
+    lin = min(lin, 0.9) + 0.1 * (1.0 - exp(-max(lin - 0.9, 0.0) * 10.0));
+    c = pow(lin, vec3(1.0 / 2.2));
   }
 
   if (uVignette > 0.0) {

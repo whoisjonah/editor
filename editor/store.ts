@@ -2,15 +2,18 @@ import { create } from 'zustand'
 import { DEFAULT_PRESET, PRESETS } from '@/data/presets'
 import { autoLook, type AutoLook } from './autoLook'
 import { autoTone } from './autoTone'
+import { chooseTargets, estimateDepth, subjectCenter, type Depth } from './depth'
 import { detectUi, undim, type Detection } from './detectUi'
 import { inpaint } from './inpaint'
 import type { MaskRegion } from './mask'
-import { blend, combine, NEUTRAL, type Focus, type NumericKey, type Params } from './params'
+import { blend, combine, NEUTRAL, type Focus, type NumericKey, type Params, type Targets } from './params'
 import { loadRecent } from './recents'
 import { readScene } from './scene'
 import { MAX_SIZE } from './renderer'
 
 type Mode = 'auto' | 'manual'
+export type Tool = 'erase' | 'glow' | null
+type Snapshot = { edited: ImageData; glow: ImageData | null }
 export type Removal = 'left' | 'right' | 'banner'
 
 type EditorState = {
@@ -20,10 +23,12 @@ type EditorState = {
   original: ImageData | null
   edited: ImageData | null
   detection: Detection | null
+  depth: Depth
   removals: Record<Removal, boolean>
   cleaning: boolean
-  history: ImageData[]
-  future: ImageData[]
+  glow: ImageData | null
+  history: Snapshot[]
+  future: Snapshot[]
   filling: boolean
   mode: Mode
   preset: string
@@ -33,14 +38,14 @@ type EditorState = {
   manual: Params
   focus: Focus
   comparing: boolean
-  erasing: boolean
+  tool: Tool
   brush: number
   error: string | null
 }
 
-const IDLE = { history: [], future: [], cleaning: false, filling: false, comparing: false, erasing: false, error: null }
+const IDLE = { glow: null, history: [], future: [], cleaning: false, filling: false, comparing: false, tool: null, error: null }
 
-const EMPTY = { id: null, source: null, name: '', original: null, edited: null, detection: null, ...IDLE }
+const EMPTY = { id: null, source: null, name: '', original: null, edited: null, detection: null, depth: null, ...IDLE }
 
 export const useEditor = create<EditorState>(() => ({
   ...EMPTY,
@@ -49,21 +54,21 @@ export const useEditor = create<EditorState>(() => ({
   preset: DEFAULT_PRESET,
   strength: 100,
   auto: {},
-  autoLook: { base: DEFAULT_PRESET, look: {} },
+  autoLook: { base: DEFAULT_PRESET, look: {}, looks: {} },
   manual: NEUTRAL,
   focus: { x: 0.5, y: 0.5 },
   brush: 4,
 }))
 
 export function presetParams(state: Pick<EditorState, 'auto' | 'autoLook'>, id: string, strength: number) {
-  const look = id === 'auto' ? state.autoLook.look : (PRESETS.find((p) => p.id === id) ?? PRESETS[0]).look
+  const look = id === 'auto' ? state.autoLook.look : (state.autoLook.looks[id] ?? (PRESETS.find((p) => p.id === id) ?? PRESETS[0]).look)
   return blend(combine(state.auto, look), strength / 100)
 }
 
-function analyze(image: ImageData) {
-  const scene = readScene(image)
+function analyze(image: ImageData, depth: Depth = null) {
+  const scene = readScene(image, depth)
   const auto = autoTone(image)
-  return { auto, autoLook: autoLook(image, auto, scene), focus: { x: scene.subject.x, y: scene.subject.y } }
+  return { auto, autoLook: autoLook(image, auto, scene), focus: scene.focus }
 }
 
 export function currentParams(state: EditorState): Params {
@@ -103,8 +108,10 @@ export async function openImage(file: File) {
       original: image,
       edited: image,
       detection: detectUi(image),
+      depth: 'loading',
       ...analyze(image),
     })
+    findDepth(image, run)
     await clean(run)
   } catch {
     if (run === token) useEditor.setState({ error: 'Could not read that image', cleaning: false })
@@ -135,10 +142,20 @@ export async function restoreRecent(id: string) {
       original,
       edited,
       detection: detectUi(original),
+      depth: 'loading',
     })
+    findDepth(original, run, false)
   } catch {
     if (run === token) useEditor.setState({ error: 'Could not open that photo' })
   }
+}
+
+async function findDepth(image: ImageData, run: number, refocus = true) {
+  const depth = await estimateDepth(image)
+  if (run !== token) return
+  if (!depth) return useEditor.setState({ depth })
+  const { focus, ...analysis } = analyze(image, depth)
+  useEditor.setState({ depth, ...analysis, ...(refocus && { focus }) })
 }
 
 async function clean(run: number) {
@@ -154,7 +171,7 @@ async function clean(run: number) {
     image = await inpaint(image, mask)
     if (run !== token) return
   }
-  useEditor.setState({ edited: image, history: [], future: [], cleaning: false })
+  useEditor.setState({ edited: image, glow: null, history: [], future: [], cleaning: false })
 }
 
 export async function setRemoval(removal: Removal, on: boolean) {
@@ -163,26 +180,48 @@ export async function setRemoval(removal: Removal, on: boolean) {
   await clean(run)
 }
 
+function commit(next: Partial<Snapshot>) {
+  const { edited, glow, history } = useEditor.getState()
+  if (edited) useEditor.setState({ ...next, history: [...history, { edited, glow }].slice(-15), future: [] })
+}
+
 export async function eraseRegion(region: MaskRegion) {
-  const { edited, history } = useEditor.getState()
+  const { edited } = useEditor.getState()
   if (!edited) return
   const run = token
   useEditor.setState({ filling: true })
   const filled = await inpaint(edited, region)
-  if (run !== token) return useEditor.setState({ filling: false })
-  useEditor.setState({ edited: filled, history: [...history, edited].slice(-15), future: [], filling: false })
+  useEditor.setState({ filling: false })
+  if (run === token) commit({ edited: filled })
 }
 
-export function undoErase() {
-  const { edited, history, future } = useEditor.getState()
+export function paintGlow(glow: ImageData) {
+  commit({ glow })
+}
+
+export function undo() {
+  const { edited, glow, history, future } = useEditor.getState()
   if (!edited || !history.length) return
-  useEditor.setState({ edited: history[history.length - 1], history: history.slice(0, -1), future: [...future, edited] })
+  useEditor.setState({ ...history[history.length - 1], history: history.slice(0, -1), future: [...future, { edited, glow }] })
 }
 
-export function redoErase() {
-  const { edited, history, future } = useEditor.getState()
+export function redo() {
+  const { edited, glow, history, future } = useEditor.getState()
   if (!edited || !future.length) return
-  useEditor.setState({ edited: future[future.length - 1], history: [...history, edited].slice(-15), future: future.slice(0, -1) })
+  useEditor.setState({ ...future[future.length - 1], history: [...history, { edited, glow }].slice(-15), future: future.slice(0, -1) })
+}
+
+export function toggleTarget(index: number) {
+  const { depth, focus } = useEditor.getState()
+  if (!depth || depth === 'loading') return
+  const chosen = chooseTargets(depth.subjects, focus.targets)
+  const targets = chosen.includes(index) ? chosen.filter((i) => i !== index) : [...chosen, index]
+  useEditor.setState({ focus: { ...focus, ...subjectCenter(depth.subjects, targets), targets } })
+}
+
+export function setTargets(targets: Targets) {
+  const { depth, focus } = useEditor.getState()
+  useEditor.setState({ focus: { ...focus, ...(depth && depth !== 'loading' && subjectCenter(depth.subjects, targets)), targets } })
 }
 
 export function setMode(mode: Mode) {

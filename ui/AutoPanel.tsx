@@ -14,13 +14,15 @@ export function AutoPanel() {
   const edited = useEditor((s) => s.edited)
   const auto = useEditor((s) => s.auto)
   const base = useEditor((s) => s.autoLook.base)
+  const depth = useEditor((s) => s.depth)
+  const glow = useEditor((s) => s.glow)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!edited) return
     const timer = setTimeout(() => setThumbs(renderThumbnails()), 60)
     return () => clearTimeout(timer)
-  }, [edited, auto, base])
+  }, [edited, auto, base, depth, glow])
 
   const thumb = (id: string) =>
     edited &&

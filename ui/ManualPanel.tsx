@@ -2,12 +2,14 @@
 
 import { IconFocusCentered, IconLayoutDistributeHorizontal, IconRotate, IconWand } from '@tabler/icons-react'
 import { SLIDER_GROUPS } from '@/data/sliders'
-import { autoManual, resetManual, resetParam, setParam, useEditor } from '@/editor/store'
+import { autoManual, resetManual, resetParam, setParam, setTargets, useEditor } from '@/editor/store'
 import { Segmented, Slider } from './controls'
 import { Heading } from './Panel'
 
 export function ManualPanel() {
   const manual = useEditor((s) => s.manual)
+  const targets = useEditor((s) => s.focus.targets ?? 'auto')
+  const detected = useEditor((s) => !!s.depth && s.depth !== 'loading' && s.depth.subjects.length > 0)
 
   return (
     <>
@@ -35,6 +37,22 @@ export function ManualPanel() {
                   { value: 'tilt', label: 'Tilt shift', icon: IconLayoutDistributeHorizontal },
                 ]}
               />
+              {detected && manual.blurMode === 'radial' && (
+                <div className="mt-2">
+                  <Segmented
+                    size="sm"
+                    value={Array.isArray(targets) ? 'custom' : targets}
+                    onChange={(v) => v !== 'custom' && setTargets(v)}
+                    options={[
+                      { value: 'auto', label: 'Auto' },
+                      { value: 'vehicles', label: 'Vehicles' },
+                      { value: 'people', label: 'People' },
+                      { value: 'all', label: 'All' },
+                      ...(Array.isArray(targets) ? [{ value: 'custom' as const, label: 'Picked' }] : []),
+                    ]}
+                  />
+                </div>
+              )}
             </div>
           )}
           {group.sliders.map((def) => (

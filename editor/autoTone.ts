@@ -40,17 +40,21 @@ export function autoTone(image: ImageData): Partial<Params> {
   const high = percentile(0.995)
   const night = median < 0.22
 
-  const target = night ? 0.24 : 0.42
-  const exposure = clamp(Math.log2(target / Math.max(median, 0.02)) * 0.45, -0.5, night ? 0.35 : 0.7)
-  const whites = clamp((0.96 - high) * 160, 0, 35)
-  const blacks = clamp((-(low - 0.02) / 0.16) * 100 * 0.85, -70, 6)
-  const dehaze = clamp((low - 0.08) * 120, 0, 15)
-  const contrast = clamp((0.62 - (high - low)) * 45, -5, 18)
+  const whites = clamp((0.96 - high) * 120, 0, 25)
+  const blacks = clamp((-(low - 0.03) / 0.16) * 100 * 0.45, -32, 6)
+  const black = -0.16 * (blacks / 100)
+  const white = 1 - 0.2 * (whites / 100)
+  const leveled = Math.max((median - black) / (white - black), 0.02)
+  const target = night ? 0.26 : 0.44
+  const goal = median + (target - median) * (median > target ? 0.1 : night ? 0.45 : 0.3)
+  const exposure = clamp(2.2 * Math.log2(goal / leveled) * 0.8, -0.4, night ? 0.45 : 0.5)
+  const dehaze = clamp((low - 0.1) * 60, 0, 8)
+  const contrast = clamp((0.62 - (high - low)) * 40, -4, 14)
 
   let temperature = 0
   if (mids > 0) {
     const warmth = (r - b) / mids / 255
-    temperature = clamp(-warmth * 20, -6, 6)
+    temperature = clamp(-warmth * 140, -10, 20)
   }
 
   return {
@@ -59,7 +63,7 @@ export function autoTone(image: ImageData): Partial<Params> {
     blacks: Math.round(blacks),
     contrast: Math.round(contrast),
     temperature: Math.round(temperature),
-    shadows: night ? Math.round(clamp((0.22 - median) * 120, 0, 18)) : 0,
+    shadows: night ? Math.round(clamp((0.22 - median) * 100, 0, 14)) : 0,
     dehaze: Math.round(dehaze),
   }
 }
