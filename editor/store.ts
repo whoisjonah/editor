@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { DEFAULT_PRESET, PRESETS } from '@/data/presets'
-import { autoFocus } from './autoFocus'
+import { autoLook, type AutoLook } from './autoLook'
 import { autoTone } from './autoTone'
 import { detectUi, undim, type Detection } from './detectUi'
 import { inpaint } from './inpaint'
 import type { MaskRegion } from './mask'
 import { blend, combine, NEUTRAL, type Focus, type NumericKey, type Params } from './params'
 import { loadRecent } from './recents'
+import { readScene } from './scene'
 import { MAX_SIZE } from './renderer'
 
 type Mode = 'auto' | 'manual'
@@ -27,6 +28,7 @@ type EditorState = {
   preset: string
   strength: number
   auto: Partial<Params>
+  autoLook: AutoLook
   manual: Params
   focus: Focus
   comparing: boolean
@@ -46,14 +48,21 @@ export const useEditor = create<EditorState>(() => ({
   preset: DEFAULT_PRESET,
   strength: 100,
   auto: {},
+  autoLook: { base: DEFAULT_PRESET, look: {} },
   manual: NEUTRAL,
   focus: { x: 0.5, y: 0.5 },
   brush: 4,
 }))
 
-export function presetParams(state: Pick<EditorState, 'auto'>, id: string, strength: number) {
-  const preset = PRESETS.find((p) => p.id === id) ?? PRESETS[0]
-  return blend(combine(state.auto, preset.look), strength / 100)
+export function presetParams(state: Pick<EditorState, 'auto' | 'autoLook'>, id: string, strength: number) {
+  const look = id === 'auto' ? state.autoLook.look : (PRESETS.find((p) => p.id === id) ?? PRESETS[0]).look
+  return blend(combine(state.auto, look), strength / 100)
+}
+
+function analyze(image: ImageData) {
+  const scene = readScene(image)
+  const auto = autoTone(image)
+  return { auto, autoLook: autoLook(image, auto, scene), focus: { x: scene.subject.x, y: scene.subject.y } }
 }
 
 export function currentParams(state: EditorState): Params {
@@ -93,8 +102,7 @@ export async function openImage(file: File) {
       original: image,
       edited: image,
       detection: detectUi(image),
-      auto: autoTone(image),
-      focus: autoFocus(image),
+      ...analyze(image),
     })
     await clean(run)
   } catch {
@@ -117,6 +125,7 @@ export async function restoreRecent(id: string) {
     if (run !== token) return
     useEditor.setState({
       ...IDLE,
+      ...analyze(original),
       ...recent.settings,
       id: recent.id,
       source: recent.original,
@@ -124,7 +133,6 @@ export async function restoreRecent(id: string) {
       original,
       edited,
       detection: detectUi(original),
-      auto: autoTone(original),
     })
   } catch {
     if (run === token) useEditor.setState({ error: 'Could not open that photo' })

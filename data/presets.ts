@@ -1,6 +1,6 @@
 import type { Params } from '@/editor/params'
 
-type Preset = { id: string; name: string; look: Partial<Params> }
+type Preset = { id: string; name: string; look: Partial<Params>; dark?: boolean }
 
 type PresetGroup = { title: string; presets: Preset[] }
 
@@ -149,6 +149,7 @@ export const PRESET_GROUPS: PresetGroup[] = [
       },
       {
         id: 'night',
+        dark: true,
         name: 'Night',
         look: {
           exposure: -0.5,
@@ -201,6 +202,7 @@ export const PRESET_GROUPS: PresetGroup[] = [
       },
       {
         id: 'purple',
+        dark: true,
         name: 'Purple',
         look: {
           exposure: -0.3,
@@ -290,4 +292,4 @@ export const PRESET_GROUPS: PresetGroup[] = [
 
 export const PRESETS = PRESET_GROUPS.flatMap((g) => g.presets)
 
-export const DEFAULT_PRESET = 'movie'
+export const DEFAULT_PRESET = 'auto'

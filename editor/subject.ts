@@ -3,7 +3,7 @@ import type { Focus } from './params'
 const COLS = 48
 const ROWS = 27
 
-export function autoFocus(image: ImageData): Focus {
+export function findSubject(image: ImageData): Focus & { spread: number } {
   const { data, width, height } = image
   const score = new Float32Array(COLS * ROWS)
   const luma = (x: number, y: number) => {
@@ -57,9 +57,19 @@ export function autoFocus(image: ImageData): Focus {
       total += s
     }
   }
-  if (!total) return { x: 0.5, y: 0.5 }
+  if (!total) return { x: 0.5, y: 0.5, spread: 0.3 }
+  const cx = sx / total
+  const cy = sy / total
+  let spread = 0
+  for (let gy = 0; gy < ROWS; gy++) {
+    for (let gx = 0; gx < COLS; gx++) {
+      const s = score[gy * COLS + gx]
+      if (s >= cut) spread += s * (((gx + 0.5) / COLS - cx) ** 2 + ((gy + 0.5) / ROWS - cy) ** 2)
+    }
+  }
   return {
-    x: Math.min(0.75, Math.max(0.25, sx / total)),
-    y: Math.min(0.75, Math.max(0.3, sy / total)),
+    x: Math.min(0.75, Math.max(0.25, cx)),
+    y: Math.min(0.75, Math.max(0.3, cy)),
+    spread: Math.sqrt(spread / total),
   }
 }

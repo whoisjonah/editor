@@ -1,4 +1,5 @@
 import { PRESETS } from '@/data/presets'
+import { canvasOf, pixels, scaled, toBlob } from './canvas'
 import { Renderer } from './renderer'
 import { currentParams, presetParams, useEditor } from './store'
 
@@ -10,28 +11,6 @@ export function setActiveRenderer(renderer: Renderer | null) {
 }
 
 export type ExportFormat = 'png' | 'jpeg'
-
-function canvasOf(image: ImageData) {
-  const canvas = document.createElement('canvas')
-  canvas.width = image.width
-  canvas.height = image.height
-  canvas.getContext('2d')!.putImageData(image, 0, 0)
-  return canvas
-}
-
-function scaled(source: HTMLCanvasElement, width: number) {
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = Math.max(1, Math.round((source.height / source.width) * width))
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
-  return canvas
-}
-
-function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number) {
-  return new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality))
-}
 
 export async function exportImage(format: ExportFormat) {
   const state = useEditor.getState()
@@ -55,12 +34,11 @@ export function renderThumbnails(): Record<string, string> {
   } catch {
     return {}
   }
-  const small = scaled(canvasOf(state.edited), 360)
-  thumbs.setImage(small.getContext('2d')!.getImageData(0, 0, small.width, small.height))
+  thumbs.setImage(pixels(scaled(canvasOf(state.edited), 360)))
   const out: Record<string, string> = {}
-  for (const preset of PRESETS) {
-    thumbs.render(presetParams(state, preset.id, 100), state.focus)
-    out[preset.id] = thumbs.canvas.toDataURL('image/jpeg', 0.85)
+  for (const id of ['auto', ...PRESETS.map((p) => p.id)]) {
+    thumbs.render(presetParams(state, id, 100), state.focus)
+    out[id] = thumbs.canvas.toDataURL('image/jpeg', 0.85)
   }
   return out
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { IconAdjustmentsHorizontal } from '@tabler/icons-react'
+import { IconAdjustmentsHorizontal, IconSparkles } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import { PRESET_GROUPS } from '@/data/presets'
 import { renderThumbnails } from '@/editor/output'
@@ -13,16 +13,41 @@ export function AutoPanel() {
   const strength = useEditor((s) => s.strength)
   const edited = useEditor((s) => s.edited)
   const auto = useEditor((s) => s.auto)
+  const base = useEditor((s) => s.autoLook.base)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!edited) return
     const timer = setTimeout(() => setThumbs(renderThumbnails()), 60)
     return () => clearTimeout(timer)
-  }, [edited, auto])
+  }, [edited, auto, base])
+
+  const thumb = (id: string) =>
+    edited &&
+    thumbs[id] && (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={thumbs[id]} alt="" className="anim-swap h-full w-full object-cover" />
+    )
 
   return (
     <>
+      <Heading>Auto</Heading>
+      <button
+        type="button"
+        onClick={() => choosePreset('auto')}
+        aria-pressed={preset === 'auto'}
+        className={`group flex w-full items-center gap-3 rounded-xl border p-1.5 text-left transition-colors ${
+          preset === 'auto' ? 'border-white/50 bg-white/[0.06]' : 'border-app-line/70 bg-white/[0.02] hover:border-white/20'
+        }`}
+      >
+        <div className="aspect-video w-32 shrink-0 overflow-hidden rounded-lg bg-app-raised">{thumb('auto')}</div>
+        <div className="min-w-0">
+          <div className={`flex items-center gap-1.5 text-sm font-medium ${preset === 'auto' ? 'text-app-text' : 'text-app-dim group-hover:text-app-text'}`}>
+            <IconSparkles size={14} />
+            Auto
+          </div>
+        </div>
+      </button>
       {PRESET_GROUPS.map((group) => (
         <div key={group.title}>
           <Heading>{group.title}</Heading>
@@ -39,12 +64,7 @@ export function AutoPanel() {
                     active ? 'border-white/50 bg-white/[0.06]' : 'border-app-line/70 bg-white/[0.02] hover:border-white/20'
                   }`}
                 >
-                  <div className="aspect-video w-full overflow-hidden rounded-lg bg-app-raised">
-                    {edited && thumbs[p.id] && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={thumbs[p.id]} alt="" className="anim-swap h-full w-full object-cover" />
-                    )}
-                  </div>
+                  <div className="aspect-video w-full overflow-hidden rounded-lg bg-app-raised">{thumb(p.id)}</div>
                   <span className={`px-1 pb-0.5 text-xs font-medium ${active ? 'text-app-text' : 'text-app-dim group-hover:text-app-text'}`}>{p.name}</span>
                 </button>
               )
