@@ -24,7 +24,6 @@ export function TopBar({ onOpen, onTips }: { onOpen: () => void; onTips: () => v
         <IconCameraSpark size={18} stroke={1.75} className="text-app-text" />
       </div>
       <div className="flex min-w-0 flex-col leading-tight">
-        <span className="text-[11px] font-medium text-app-dim">Roblox Editor</span>
         {image ? (
           <span key={name} className="anim-swap truncate text-sm">
             <span className="font-semibold text-app-text">{name}</span>{' '}
