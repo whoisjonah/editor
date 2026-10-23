@@ -91,12 +91,11 @@ export function focusField({ map, subjects }: Sight, focus: Focus, size: number)
   const planes = leads.length ? leads.map((s) => s.depth) : [data[(Math.min(height - 1, Math.round(focus.y * height)) * width + Math.min(width - 1, Math.round(focus.x * width))) * 4] / 255]
   const near = Math.max(...planes)
   const far = Math.min(...planes)
-  const tolerance = 0.05 + 0.25 * size
+  const tolerance = 0.02 + 0.1 * size
   let blur = new Float32Array(width * height).map((_, p) => {
     if (chosen.some((s) => s.mask[p])) return 0
     const d = data[p * 4] / 255
-    const gap = d > near ? (d - near) * 0.6 : Math.max(0, far - d) / Math.max(far, 0.15)
-    return Math.min(1, Math.max(0, (gap - tolerance) / 0.5)) ** 1.2
+    return Math.min(1, Math.max(0, (d > near ? (d - near) * 0.7 : far - d) - tolerance) / 0.7)
   })
   for (const [dx, dy] of [[1, 0], [0, 1], [1, 0], [0, 1]]) {
     const next = new Float32Array(blur.length)

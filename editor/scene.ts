@@ -73,7 +73,7 @@ export function readScene(image: ImageData, depth: Depth = null): Scene {
 export function tailor(look: Partial<Params>, { median, lights, blown, close, sight, presence }: Scene): Partial<Params> {
   const tweaks: Partial<Params> = {}
   if (look.blur) {
-    tweaks.blur = look.blur * ((sight ? clamp(presence / 0.15, 0.15, 1.1) : 0.2 + 0.95 * close) * (median < 0.22 ? 1.1 : 1) - 1)
+    tweaks.blur = look.blur * ((sight ? clamp(presence / 0.1, 0.15, 1) : 0.2 + 0.95 * close) * (median < 0.22 ? 1.1 : 1) - 1)
     tweaks.focusSize = clamp((look.focusSize ?? 45) + (1 - close) * 12, 40, 66)
   }
   const night = median < 0.3

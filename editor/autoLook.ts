@@ -50,7 +50,7 @@ export function autoLook(image: ImageData, auto: Partial<Params>, scene: Scene):
       }
     }
   }
-  if (scene.presence > 0.04) best.look = { ...best.look, blur: Math.max(best.look.blur ?? 0, 16 + 30 * Math.min(1, scene.presence / 0.25)), blurMode: 'radial' }
+  if (scene.presence > 0.04) best.look = { ...best.look, blur: Math.max(best.look.blur ?? 0, 40 * Math.min(1, scene.presence / 0.1)), blurMode: 'radial' }
   const day = clamp((scene.median - 0.15) / 0.3, 0, 1)
   for (let pass = 0; pass < 3; pass++) {
     const f = grab(blend(combine(auto, best.look), 1))
