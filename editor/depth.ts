@@ -5,7 +5,7 @@ type Box = [number, number, number, number]
 
 export type Subject = { kind: 'vehicle' | 'person' | 'object'; score: number; box: Box; depth: number; mask: Uint8Array }
 
-export type Sight = { map: ImageData; subjects: Subject[] }
+export type Sight = { map: ImageData; guide: ImageData; subjects: Subject[] }
 
 export type Depth = Sight | 'loading' | null
 
@@ -25,7 +25,7 @@ function spread(solid: Uint8Array, width: number, height: number) {
     if (!on) return
     const x = p % width
     const y = (p - x) / width
-    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) mask[Math.min(height - 1, Math.max(0, y + dy)) * width + Math.min(width - 1, Math.max(0, x + dx))] = 1
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) mask[Math.min(height - 1, Math.max(0, y + dy)) * width + Math.min(width - 1, Math.max(0, x + dx))] = 1
   })
   return mask
 }
@@ -80,7 +80,8 @@ function shared(a: Box, b: Box) {
 
 export async function estimateDepth(image: ImageData): Promise<Depth> {
   try {
-    const small = scaled(canvasOf(image), 640)
+    const canvas = canvasOf(image)
+    const small = scaled(canvas, 640)
     const response = await fetch('/api/focus', { method: 'POST', body: await toBlob(small, 'image/jpeg', 0.85) })
     if (!response.ok) return null
     const { depth, subjects }: { depth: string; subjects: Omit<Subject, 'depth' | 'mask'>[] } = await response.json()
@@ -92,7 +93,7 @@ export async function estimateDepth(image: ImageData): Promise<Depth> {
       else merged.push(s)
     }
     const color = pixels(small)
-    return { map, subjects: merged.map((s) => ({ ...s, ...outline(map, s.box, s.kind === 'vehicle' ? color : undefined) })) }
+    return { map, guide: pixels(scaled(canvas, Math.min(960, image.width))), subjects: merged.map((s) => ({ ...s, ...outline(map, s.box, s.kind === 'vehicle' ? color : undefined) })) }
   } catch {
     return null
   }
@@ -159,7 +160,78 @@ export function standout(subjects: Subject[]) {
   return total ? (weight(lead) / total) * Math.min(1, Math.max(0, (area(lead) - 0.01) / 0.025)) : 0
 }
 
-export function focusField({ map, subjects }: Sight, focus: Focus, size: number) {
+function boxBlur(source: Float32Array, width: number, height: number, radius: number) {
+  const scale = 1 / (radius * 2 + 1)
+  const across = new Float32Array(source.length)
+  for (let y = 0; y < height; y++) {
+    const row = y * width
+    let sum = 0
+    for (let i = -radius; i <= radius; i++) sum += source[row + Math.min(width - 1, Math.max(0, i))]
+    for (let x = 0; x < width; x++) {
+      across[row + x] = sum * scale
+      sum += source[row + Math.min(width - 1, x + radius + 1)] - source[row + Math.max(0, x - radius)]
+    }
+  }
+  const out = new Float32Array(source.length)
+  const sums = new Float32Array(width)
+  for (let i = -radius; i <= radius; i++) {
+    const row = Math.min(height - 1, Math.max(0, i)) * width
+    for (let x = 0; x < width; x++) sums[x] += across[row + x]
+  }
+  for (let y = 0; y < height; y++) {
+    const add = Math.min(height - 1, y + radius + 1) * width
+    const drop = Math.max(0, y - radius) * width
+    for (let x = 0; x < width; x++) {
+      out[y * width + x] = sums[x] * scale
+      sums[x] += across[add + x] - across[drop + x]
+    }
+  }
+  return out
+}
+
+function refine(blur: Float32Array, width: number, height: number, { data, width: w, height: h }: ImageData) {
+  const n = w * h
+  const luma = new Float32Array(n)
+  const coarse = new Float32Array(n)
+  const square = new Float32Array(n)
+  const product = new Float32Array(n)
+  for (let p = 0; p < n; p++) {
+    const x = Math.min(width - 1, Math.max(0, (((p % w) + 0.5) * width) / w - 0.5))
+    const y = Math.min(height - 1, Math.max(0, ((Math.floor(p / w) + 0.5) * height) / h - 0.5))
+    const x0 = Math.floor(x)
+    const y0 = Math.floor(y)
+    const x1 = Math.min(width - 1, x0 + 1)
+    const y1 = Math.min(height - 1, y0 + 1)
+    const fx = x - x0
+    const fy = y - y0
+    const l = (0.2126 * data[p * 4] + 0.7152 * data[p * 4 + 1] + 0.0722 * data[p * 4 + 2]) / 255
+    const b = (blur[y0 * width + x0] * (1 - fx) + blur[y0 * width + x1] * fx) * (1 - fy) + (blur[y1 * width + x0] * (1 - fx) + blur[y1 * width + x1] * fx) * fy
+    luma[p] = l
+    coarse[p] = b
+    square[p] = l * l
+    product[p] = l * b
+  }
+  const radius = Math.max(2, Math.round(w / 106))
+  const meanL = boxBlur(luma, w, h, radius)
+  const meanB = boxBlur(coarse, w, h, radius)
+  const varL = boxBlur(square, w, h, radius)
+  const cov = boxBlur(product, w, h, radius)
+  for (let p = 0; p < n; p++) {
+    const a = (cov[p] - meanL[p] * meanB[p]) / (varL[p] - meanL[p] * meanL[p] + 0.0003)
+    square[p] = a
+    product[p] = meanB[p] - a * meanL[p]
+  }
+  const gain = boxBlur(square, w, h, radius)
+  const offset = boxBlur(product, w, h, radius)
+  const field = new ImageData(w, h)
+  for (let p = 0; p < n; p++) {
+    field.data[p * 4] = (gain[p] * luma[p] + offset[p]) * 255
+    field.data[p * 4 + 3] = 255
+  }
+  return field
+}
+
+export function focusField({ map, guide, subjects }: Sight, focus: Focus, size: number) {
   const { data, width, height } = map
   const chosen = chooseTargets(subjects, focus.targets).map((i) => subjects[i])
   const leads = chosen.filter((s) => area(s) >= 0.015)
@@ -167,29 +239,12 @@ export function focusField({ map, subjects }: Sight, focus: Focus, size: number)
   const near = Math.max(...planes)
   const far = Math.min(...planes)
   const tolerance = 0.02 + 0.1 * size
-  const keep = (p: number) => chosen.some((s) => s.mask[p])
-  let blur = new Float32Array(width * height).map((_, p) => {
-    if (keep(p)) return 0
+  const blur = new Float32Array(width * height).map((_, p) => {
+    if (chosen.some((s) => s.mask[p])) return 0
     const d = data[p * 4] / 255
     return Math.min(1, Math.max(0, (d > near ? (d - near) * 0.7 : (far - d) / Math.max(far, 0.1)) - tolerance) / 1)
   })
-  for (const [dx, dy] of [[1, 0], [0, 1], [1, 0], [0, 1]]) {
-    const next = new Float32Array(blur.length)
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let sum = 0
-        for (let k = -3; k <= 3; k++) sum += blur[Math.min(height - 1, Math.max(0, y + k * dy)) * width + Math.min(width - 1, Math.max(0, x + k * dx))]
-        next[y * width + x] = sum / 7
-      }
-    }
-    blur = next
-  }
-  const field = new ImageData(width, height)
-  blur.forEach((v, p) => {
-    field.data[p * 4] = keep(p) ? 0 : v * 255
-    field.data[p * 4 + 3] = 255
-  })
-  return field
+  return refine(boxBlur(blur, width, height, 3), width, height, guide)
 }
 
 export function subjectCenter(subjects: Subject[], targets: Targets = 'auto') {
