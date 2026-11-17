@@ -3,7 +3,7 @@ import type { Focus, Targets } from './params'
 
 type Box = [number, number, number, number]
 
-export type Subject = { kind: 'vehicle' | 'person'; score: number; box: Box; depth: number; mask: Uint8Array }
+export type Subject = { kind: 'vehicle' | 'person' | 'object'; score: number; box: Box; depth: number; mask: Uint8Array }
 
 export type Sight = { map: ImageData; subjects: Subject[] }
 
@@ -19,7 +19,38 @@ async function decode(url: string) {
   return pixels(canvas)
 }
 
-function outline(map: ImageData, box: Box) {
+function spread(solid: Uint8Array, width: number, height: number) {
+  const mask = new Uint8Array(width * height)
+  solid.forEach((on, p) => {
+    if (!on) return
+    const x = p % width
+    const y = (p - x) / width
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) mask[Math.min(height - 1, Math.max(0, y + dy)) * width + Math.min(width - 1, Math.max(0, x + dx))] = 1
+  })
+  return mask
+}
+
+function roofline(solid: Uint8Array, { data, width }: ImageData, [x0, y0, x1, y1]: Box, reach: number) {
+  const tops = Array.from({ length: x1 - x0 }, (_, i) => {
+    let y = y0
+    while (y < y1 && !solid[y * width + x0 + i]) y++
+    return y
+  })
+  const roof = Math.min(...tops)
+  tops.forEach((top, i) => {
+    const x = x0 + i
+    if (top > roof + reach / 2 || top - reach < 1) return
+    const bg = ((top - reach - 1) * width + x) * 4
+    for (let y = top - reach; y < top; y++) {
+      const p = (y * width + x) * 4
+      if (Math.abs(data[p] - data[bg]) + Math.abs(data[p + 1] - data[bg + 1]) + Math.abs(data[p + 2] - data[bg + 2]) < 90) continue
+      for (let k = y; k < top; k++) solid[k * width + x] = 1
+      return
+    }
+  })
+}
+
+function outline(map: ImageData, box: Box, color?: ImageData) {
   const { data, width, height } = map
   const [x0, y0, x1, y1] = [box[0] * width, box[1] * height, box[2] * width, box[3] * height].map(Math.round)
   const [px0, py0, px1] = [Math.max(0, x0 - (x1 - x0) * 0.04), Math.max(0, y0 - (y1 - y0) * 0.18), Math.min(width, x1 + (x1 - x0) * 0.04)].map(Math.round)
@@ -35,14 +66,10 @@ function outline(map: ImageData, box: Box) {
   const middle = (values: number[], q: number) => values.sort((a, b) => a - b)[Math.floor((values.length - 1) * q)] ?? 0
   const depth = middle(core, 0.5)
   const cut = depth - Math.max(24, (depth - middle(inside, 0.1)) * 0.7)
-  const mask = new Uint8Array(width * height)
-  for (let y = py0; y < y1; y++) {
-    for (let x = px0; x < px1; x++) {
-      if (data[(y * width + x) * 4] < cut) continue
-      for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) mask[Math.min(height - 1, Math.max(0, y + dy)) * width + Math.min(width - 1, Math.max(0, x + dx))] = 1
-    }
-  }
-  return { depth: depth / 255, mask }
+  const solid = new Uint8Array(width * height)
+  for (let y = py0; y < y1; y++) for (let x = px0; x < px1; x++) if (data[(y * width + x) * 4] >= cut) solid[y * width + x] = 1
+  if (color) roofline(solid, color, [px0, py0, px1, y1], Math.round((y1 - y0) * 0.08))
+  return { depth: depth / 255, mask: spread(solid, width, height) }
 }
 
 function shared(a: Box, b: Box) {
@@ -53,7 +80,8 @@ function shared(a: Box, b: Box) {
 
 export async function estimateDepth(image: ImageData): Promise<Depth> {
   try {
-    const response = await fetch('/api/focus', { method: 'POST', body: await toBlob(scaled(canvasOf(image), 640), 'image/jpeg', 0.85) })
+    const small = scaled(canvasOf(image), 640)
+    const response = await fetch('/api/focus', { method: 'POST', body: await toBlob(small, 'image/jpeg', 0.85) })
     if (!response.ok) return null
     const { depth, subjects }: { depth: string; subjects: Omit<Subject, 'depth' | 'mask'>[] } = await response.json()
     const map = await decode(depth)
@@ -63,7 +91,8 @@ export async function estimateDepth(image: ImageData): Promise<Depth> {
       if (twin) twin.box = [Math.min(twin.box[0], s.box[0]), Math.min(twin.box[1], s.box[1]), Math.max(twin.box[2], s.box[2]), Math.max(twin.box[3], s.box[3])]
       else merged.push(s)
     }
-    return { map, subjects: merged.map((s) => ({ ...s, ...outline(map, s.box) })) }
+    const color = pixels(small)
+    return { map, subjects: merged.map((s) => ({ ...s, ...outline(map, s.box, s.kind === 'vehicle' ? color : undefined) })) }
   } catch {
     return null
   }
@@ -84,6 +113,46 @@ export function chooseTargets(subjects: Subject[], targets: Targets = 'auto') {
   return subjects.flatMap((s, i) => (picked.includes(i) || picked.some((j) => Math.abs(subjects[j].depth - s.depth) < 0.06) ? [i] : []))
 }
 
+export function findObject({ map }: Sight, x: number, y: number): Subject | null {
+  const { data, width, height } = map
+  const at = (px: number, py: number) => data[(py * width + px) * 4]
+  const sx = Math.min(width - 1, Math.round(x * width))
+  const sy = Math.min(height - 1, Math.round(y * height))
+  const seed = at(sx, sy)
+  const tolerance = Math.max(8, seed * 0.15)
+  const solid = new Uint8Array(width * height)
+  const bounds = [sx, sy, sx, sy]
+  const stack = [sy * width + sx]
+  solid[stack[0]] = 1
+  let count = 0
+  while (stack.length) {
+    const p = stack.pop()!
+    const px = p % width
+    const py = (p - px) / width
+    count++
+    bounds[0] = Math.min(bounds[0], px)
+    bounds[1] = Math.min(bounds[1], py)
+    bounds[2] = Math.max(bounds[2], px)
+    bounds[3] = Math.max(bounds[3], py)
+    for (const [nx, ny] of [[px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height || Math.abs(nx - sx) > width * 0.12 || Math.abs(ny - sy) > height * 0.3) continue
+      const q = ny * width + nx
+      const d = at(nx, ny)
+      if (solid[q] || Math.abs(d - seed) > tolerance || Math.abs(d - at(px, py)) > 3 || Math.abs(at(nx, Math.min(height - 1, ny + 6)) - d) > 3) continue
+      solid[q] = 1
+      stack.push(q)
+    }
+  }
+  if (count < 30) return null
+  return {
+    kind: 'object',
+    score: 1,
+    box: [bounds[0] / width, bounds[1] / height, (bounds[2] + 1) / width, (bounds[3] + 1) / height],
+    depth: seed / 255,
+    mask: spread(solid, width, height),
+  }
+}
+
 export function standout(subjects: Subject[]) {
   const total = subjects.reduce((sum, s) => sum + weight(s), 0)
   const lead = subjects.reduce((a, s) => (weight(s) > weight(a) ? s : a))
@@ -98,8 +167,9 @@ export function focusField({ map, subjects }: Sight, focus: Focus, size: number)
   const near = Math.max(...planes)
   const far = Math.min(...planes)
   const tolerance = 0.02 + 0.1 * size
+  const keep = (p: number) => chosen.some((s) => s.mask[p])
   let blur = new Float32Array(width * height).map((_, p) => {
-    if (chosen.some((s) => s.mask[p])) return 0
+    if (keep(p)) return 0
     const d = data[p * 4] / 255
     return Math.min(1, Math.max(0, (d > near ? (d - near) * 0.7 : (far - d) / Math.max(far, 0.1)) - tolerance) / 1)
   })
@@ -116,7 +186,7 @@ export function focusField({ map, subjects }: Sight, focus: Focus, size: number)
   }
   const field = new ImageData(width, height)
   blur.forEach((v, p) => {
-    field.data[p * 4] = v * 255
+    field.data[p * 4] = keep(p) ? 0 : v * 255
     field.data[p * 4 + 3] = 255
   })
   return field

@@ -4,25 +4,27 @@ import { IconAdjustmentsHorizontal, IconSparkles } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import { PRESET_GROUPS } from '@/data/presets'
 import { renderThumbnails } from '@/editor/output'
-import { choosePreset, fineTune, useEditor } from '@/editor/store'
+import { choosePreset, currentParams, fineTune, useEditor } from '@/editor/store'
 import { Slider } from './controls'
 import { Heading } from './Panel'
 
 export function AutoPanel() {
   const preset = useEditor((s) => s.preset)
   const strength = useEditor((s) => s.strength)
+  const blur = useEditor((s) => currentParams(s).blur)
   const edited = useEditor((s) => s.edited)
   const auto = useEditor((s) => s.auto)
   const base = useEditor((s) => s.autoLook.base)
   const depth = useEditor((s) => s.depth)
   const glow = useEditor((s) => s.glow)
+  const override = useEditor((s) => s.blur)
   const [thumbs, setThumbs] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!edited) return
     const timer = setTimeout(() => setThumbs(renderThumbnails()), 60)
     return () => clearTimeout(timer)
-  }, [edited, auto, base, depth, glow])
+  }, [edited, auto, base, depth, glow, override])
 
   const thumb = (id: string) =>
     edited &&
@@ -76,6 +78,7 @@ export function AutoPanel() {
       ))}
       <Heading>Strength</Heading>
       <Slider label="Amount" value={strength} min={0} max={150} format={(v) => `${v}%`} onChange={(v) => useEditor.setState({ strength: v })} onReset={() => useEditor.setState({ strength: 100 })} />
+      <Slider label="Blur" value={blur} min={0} max={100} onChange={(v) => useEditor.setState({ blur: v })} onReset={() => useEditor.setState({ blur: null })} />
       <button type="button" onClick={fineTune} className="btn-skeu-dark mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-lg text-sm">
         <IconAdjustmentsHorizontal size={15} />
         Fine-tune with sliders

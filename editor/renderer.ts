@@ -57,7 +57,7 @@ export class Renderer {
   private depth: Depth = null
   private field: { tex: WebGLTexture; key: string } | null = null
   private glow: WebGLTexture | null = null
-  glowStrength = 0.4
+  glowStrength = 0.15
   private format: { internal: number; type: number }
   width = 0
   height = 0

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { DEFAULT_PRESET, PRESETS } from '@/data/presets'
 import { autoLook, type AutoLook } from './autoLook'
 import { autoTone } from './autoTone'
-import { chooseTargets, estimateDepth, subjectCenter, type Depth } from './depth'
+import { chooseTargets, estimateDepth, findObject, subjectCenter, type Depth } from './depth'
 import { detectUi, undim, type Detection } from './detectUi'
 import { inpaint } from './inpaint'
 import type { MaskRegion } from './mask'
@@ -33,6 +33,7 @@ type EditorState = {
   mode: Mode
   preset: string
   strength: number
+  blur: number | null
   auto: Partial<Params>
   autoLook: AutoLook
   manual: Params
@@ -54,17 +55,19 @@ export const useEditor = create<EditorState>(() => ({
   mode: 'auto',
   preset: DEFAULT_PRESET,
   strength: 100,
+  blur: null,
   auto: {},
   autoLook: { base: DEFAULT_PRESET, look: {}, looks: {} },
   manual: NEUTRAL,
   focus: { x: 0.5, y: 0.5 },
   brush: 4,
-  glowStrength: 40,
+  glowStrength: 15,
 }))
 
-export function presetParams(state: Pick<EditorState, 'auto' | 'autoLook'>, id: string, strength: number) {
+export function presetParams(state: Pick<EditorState, 'auto' | 'autoLook' | 'blur'>, id: string, strength: number) {
   const look = id === 'auto' ? state.autoLook.look : (state.autoLook.looks[id] ?? (PRESETS.find((p) => p.id === id) ?? PRESETS[0]).look)
-  return blend(combine(state.auto, look), strength / 100)
+  const params = blend(combine(state.auto, look), strength / 100)
+  return state.blur === null ? params : { ...params, blur: state.blur }
 }
 
 function analyze(image: ImageData, depth: Depth = null) {
@@ -219,6 +222,16 @@ export function toggleTarget(index: number) {
   const chosen = chooseTargets(depth.subjects, focus.targets)
   const targets = chosen.includes(index) ? chosen.filter((i) => i !== index) : [...chosen, index]
   useEditor.setState({ focus: { ...focus, ...subjectCenter(depth.subjects, targets), targets } })
+}
+
+export function pickObject(x: number, y: number) {
+  const { depth, focus } = useEditor.getState()
+  if (!depth || depth === 'loading') return
+  const object = findObject(depth, x, y)
+  if (!object) return
+  const subjects = [...depth.subjects, object]
+  const targets = [...chooseTargets(depth.subjects, focus.targets), depth.subjects.length]
+  useEditor.setState({ depth: { ...depth, subjects }, focus: { ...focus, ...subjectCenter(subjects, targets), targets } })
 }
 
 export function setTargets(targets: Targets) {

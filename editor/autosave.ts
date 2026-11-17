@@ -4,7 +4,7 @@ import { useEditor } from './store'
 
 const DELAY = 1000
 
-const WATCHED = ['id', 'edited', 'mode', 'preset', 'strength', 'manual', 'focus', 'removals'] as const
+const WATCHED = ['id', 'edited', 'mode', 'preset', 'strength', 'blur', 'manual', 'focus', 'removals'] as const
 const SETTLED = ['cleaning', 'filling', 'comparing'] as const
 
 let encoded: { image: ImageData; blob: Blob | null } | null = null
@@ -26,7 +26,7 @@ async function save() {
     original: s.source,
     edited: encoded.blob,
     thumb,
-    settings: { mode: s.mode, preset: s.preset, strength: s.strength, manual: s.manual, focus: s.focus, removals: s.removals },
+    settings: { mode: s.mode, preset: s.preset, strength: s.strength, blur: s.blur, manual: s.manual, focus: s.focus, removals: s.removals },
   })
 }
 

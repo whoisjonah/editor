@@ -7,6 +7,7 @@ type RecentSettings = {
   mode: 'auto' | 'manual'
   preset: string
   strength: number
+  blur: number | null
   manual: Params
   focus: Focus
   removals: Record<'left' | 'right' | 'banner', boolean>

@@ -8,7 +8,7 @@ import { dilate } from '@/editor/mask'
 import { setActiveRenderer } from '@/editor/output'
 import { Renderer } from '@/editor/renderer'
 import { NEUTRAL } from '@/editor/params'
-import { currentParams, eraseRegion, openImage, paintGlow, redo, toggleTarget, undo, useEditor, type Tool } from '@/editor/store'
+import { currentParams, eraseRegion, openImage, paintGlow, pickObject, redo, toggleTarget, undo, useEditor, type Tool } from '@/editor/store'
 
 type Point = { x: number; y: number }
 
@@ -280,7 +280,9 @@ function Overlay({ width, height }: { width: number; height: number }) {
   const [dragging, setDragging] = useState(false)
 
   if (!image) return null
-  const subjects = depth && depth !== 'loading' && !tilt ? depth.subjects : []
+  const sight = depth && depth !== 'loading' && !tilt ? depth : null
+  const subjects = sight ? sight.subjects : []
+  const picking = !tool && blur > 0 && !!sight
   const chosen = chooseTargets(subjects, focus.targets)
   const scale = width / image.width
   const brushPx = (brush / 100) * image.height
@@ -330,6 +332,10 @@ function Overlay({ width, height }: { width: number; height: number }) {
   }
 
   const onDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (picking && event.target === event.currentTarget) {
+      const p = toImage(event)
+      return pickObject(p.x / image.width, p.y / image.height)
+    }
     if (!tool) return
     event.currentTarget.setPointerCapture(event.pointerId)
     stroke.current = [toImage(event)]
@@ -356,7 +362,7 @@ function Overlay({ width, height }: { width: number; height: number }) {
 
   return (
     <div
-      className={`group absolute inset-0 touch-none ${tool ? 'cursor-none' : ''}`}
+      className={`group absolute inset-0 touch-none ${tool ? 'cursor-none' : picking ? 'cursor-crosshair' : ''}`}
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
@@ -376,7 +382,7 @@ function Overlay({ width, height }: { width: number; height: number }) {
           <button
             key={i}
             type="button"
-            aria-label={`${chosen.includes(i) ? 'Blur' : 'Focus on'} this ${kind === 'vehicle' ? 'vehicle' : 'person'}`}
+            aria-label={`${chosen.includes(i) ? 'Blur' : 'Focus on'} this ${kind}`}
             aria-pressed={chosen.includes(i)}
             onClick={() => toggleTarget(i)}
             className={`absolute rounded-md border transition-opacity ${
