@@ -14,6 +14,7 @@ type Chains = {
   wideDown: Target[]
   wideUp: Target[]
   half: Target
+  across: Target
   lens: Target
   bloomDown: Target[]
   bloomUp: Target[]
@@ -167,6 +168,7 @@ export class Renderer {
     const wide = this.levels(5)
     const bloom = this.levels(7)
     const [half] = this.chain(1)
+    const [across] = this.chain(1)
     const [lens] = this.chain(1)
     this.chains = {
       base: this.target(this.width, this.height),
@@ -174,6 +176,7 @@ export class Renderer {
       wideDown: this.chain(wide),
       wideUp: this.chain(wide),
       half,
+      across,
       lens,
       bloomDown: this.chain(bloom),
       bloomUp: this.chain(bloom),
@@ -307,16 +310,19 @@ export class Renderer {
     const radius = this.depth === 'loading' && !tilt ? 0 : (p.blur / 100) * LENS_RADIUS * c.half.h
     if (radius > 0) {
       this.use('down', c.half).tex('uSrc', c.dev.tex).f('uTexel', 1 / c.dev.w, 1 / c.dev.h).draw()
-      this.use('lens', c.lens)
-        .tex('uSrc', c.half.tex)
-        .f('uTexel', 1 / c.half.w, 1 / c.half.h)
-        .f('uRadius', radius)
-        .f('uFocusSize', p.focusSize / 100)
-        .f('uTilt', tilt ? 1 : 0)
-        .f('uFocus', focus.x, focus.y)
-        .tex('uField', field ?? src)
-        .f('uFieldOn', field ? 1 : 0)
-        .draw()
+      for (const [source, target, dx, dy] of [[c.half, c.across, 1, 0], [c.across, c.lens, 0, 1]] as const) {
+        this.use('lens', target)
+          .tex('uSrc', source.tex)
+          .f('uTexel', 1 / source.w, 1 / source.h)
+          .f('uDir', dx, dy)
+          .f('uRadius', radius)
+          .f('uFocusSize', p.focusSize / 100)
+          .f('uTilt', tilt ? 1 : 0)
+          .f('uFocus', focus.x, focus.y)
+          .tex('uField', field ?? src)
+          .f('uFieldOn', field ? 1 : 0)
+          .draw()
+      }
     }
 
     let bloom = c.dev

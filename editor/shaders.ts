@@ -120,6 +120,7 @@ void main() {
 export const LENS = `${HEAD}
 uniform sampler2D uSrc;
 uniform vec2 uTexel;
+uniform vec2 uDir;
 uniform float uRadius;
 uniform float uFocusSize;
 uniform float uTilt;
@@ -128,25 +129,26 @@ uniform vec2 uFocus;
 ${FOCUS}
 
 void main() {
+  vec3 center = texture(uSrc, vUv).rgb;
   float coc = focusMask(vUv) * uRadius;
   if (coc < 0.5) {
-    outColor = vec4(texture(uSrc, vUv).rgb, 1.0);
+    outColor = vec4(center, 1.0);
     return;
   }
-  vec3 sum = vec3(0.0);
-  float total = 0.0;
-  for (int i = 0; i < 80; i++) {
-    float t = (float(i) + 0.5) / 80.0;
-    float r = sqrt(t) * coc;
-    float a = float(i) * 2.39996323;
-    vec2 at = vUv + vec2(cos(a), sin(a)) * r * uTexel;
-    vec3 s = texture(uSrc, at).rgb;
-    float l = luma(s);
-    float w = (1.0 + 12.0 * pow(l, 6.0)) * smoothstep(r - 1.0, r + 0.5, focusMask(at) * uRadius);
-    sum += s * w;
-    total += w;
+  float sigma = coc * 0.5;
+  vec3 sum = center;
+  float total = 1.0;
+  for (int i = 1; i <= 24; i++) {
+    float x = float(i) / 24.0 * coc * 1.25;
+    float g = exp(-0.5 * (x / sigma) * (x / sigma));
+    for (int side = -1; side <= 1; side += 2) {
+      vec2 at = vUv + uDir * uTexel * x * float(side);
+      float w = g * smoothstep(x - 1.0, x + 0.5, focusMask(at) * uRadius * 1.25);
+      sum += texture(uSrc, at).rgb * w;
+      total += w;
+    }
   }
-  outColor = vec4(sum / max(total, 1e-4), 1.0);
+  outColor = vec4(sum / total, 1.0);
 }
 `
 
