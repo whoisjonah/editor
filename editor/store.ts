@@ -224,11 +224,12 @@ export function toggleTarget(index: number) {
   useEditor.setState({ focus: { ...focus, ...subjectCenter(depth.subjects, targets), targets } })
 }
 
-export function pickObject(x: number, y: number) {
-  const { depth, focus } = useEditor.getState()
+export async function pickObject(x: number, y: number) {
+  const { depth } = useEditor.getState()
   if (!depth || depth === 'loading') return
-  const object = findObject(depth, x, y)
-  if (!object) return
+  const object = await findObject(depth, x, y).catch(() => null)
+  const { depth: current, focus } = useEditor.getState()
+  if (!object || current !== depth) return
   const subjects = [...depth.subjects, object]
   const targets = [...chooseTargets(depth.subjects, focus.targets), depth.subjects.length]
   useEditor.setState({ depth: { ...depth, subjects }, focus: { ...focus, ...subjectCenter(subjects, targets), targets } })
